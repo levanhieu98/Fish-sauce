@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nước Mắm Bình Định - Đặc Sản Xứ Nẫu</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Poppins:wght@400;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: #000;
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        .bg-animated {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: 
+                radial-gradient(circle at 30% 40%, rgba(218, 165, 32, 0.25) 0%, transparent 40%),
+                radial-gradient(circle at 70% 60%, rgba(255, 140, 0, 0.2) 0%, transparent 40%),
+                linear-gradient(180deg, #0a0a0a 0%, #1a0f0a 50%, #0a0a0a 100%);
+        }
+
+        header {
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            padding: 1.5rem 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 2px solid rgba(218, 165, 32, 0.3);
+        }
+
+        nav {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 3rem;
+        }
+
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: glow 3s ease-in-out infinite;
+        }
+
+        @keyframes glow {
+            0%, 100% { filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.5)); }
+            50% { filter: drop-shadow(0 0 30px rgba(255, 165, 0, 0.8)); }
+        }
+
+        .logo-icon {
+            font-size: 2.5rem;
+            animation: rotate 4s ease-in-out infinite;
+        }
+
+        @keyframes rotate {
+            0%, 100% { transform: rotateY(0deg); }
+            50% { transform: rotateY(180deg); }
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 3rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: #fff;
+            text-decoration: none;
+            font-weight: 600;
+            position: relative;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+        }
+
+        .nav-links a::before {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #FFD700, #FF8C00);
+            transition: width 0.3s;
+        }
+
+        .nav-links a:hover::before {
+            width: 100%;
+        }
+
+        .nav-links a:hover {
+            color: #FFD700;
+        }
+
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8rem 2rem 4rem;
+            position: relative;
+        }
+
+        .hero-content {
+            text-align: center;
+            max-width: 1200px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .hero-badge {
+            display: inline-block;
+            padding: 1rem 2.5rem;
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 140, 0, 0.2));
+            border: 2px solid #FFD700;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 1rem;
+            margin-bottom: 2rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            animation: pulse 2s ease-in-out infinite;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .hero h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(4rem, 12vw, 10rem);
+            font-weight: 900;
+            line-height: 0.9;
+            margin-bottom: 2rem;
+            background: linear-gradient(180deg, #FFFFFF 0%, #FFD700 50%, #FF8C00 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: slideIn 1.5s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(50px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .hero-highlight {
+            display: block;
+            font-size: clamp(5rem, 14vw, 12rem);
+            text-shadow: 
+                0 0 20px rgba(255, 215, 0, 0.8),
+                0 0 40px rgba(255, 140, 0, 0.6);
+            animation: neon 2s ease-in-out infinite;
+        }
+
+        @keyframes neon {
+            0%, 100% { 
+                text-shadow: 
+                    0 0 20px rgba(255, 215, 0, 0.8),
+                    0 0 40px rgba(255, 140, 0, 0.6);
+            }
+            50% { 
+                text-shadow: 
+                    0 0 30px rgba(255, 215, 0, 1),
+                    0 0 60px rgba(255, 140, 0, 0.8);
+            }
+        }
+
+        .hero-subtitle {
+            font-size: clamp(1.2rem, 3vw, 2rem);
+            margin-bottom: 3rem;
+            font-weight: 600;
+            opacity: 0.9;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 1.5rem 4rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.4s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #FFD700, #FF8C00);
+            color: #000;
+            box-shadow: 0 15px 50px rgba(255, 215, 0, 0.5);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-8px) scale(1.05);
+            box-shadow: 0 25px 70px rgba(255, 215, 0, 0.7);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: #fff;
+            border: 3px solid #FFD700;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 215, 0, 0.2);
+            transform: translateY(-8px) scale(1.05);
+        }
+
+        .hero-product {
+            margin-top: 5rem;
+            position: relative;
+            height: 600px;
+        }
+
+        .product-bottle {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 400px;
+            height: 550px;
+            background: linear-gradient(135deg, rgba(139, 69, 19, 0.9), rgba(210, 105, 30, 0.9));
+            border-radius: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15rem;
+            box-shadow: 
+                0 50px 100px rgba(0, 0, 0, 0.8),
+                0 0 100px rgba(255, 215, 0, 0.3);
+            animation: float 6s ease-in-out infinite;
+            border: 3px solid rgba(255, 215, 0, 0.3);
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+            50% { transform: translate(-50%, -50%) translateY(-30px); }
+        }
+
+        .glow-circle {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            border: 3px solid rgba(255, 215, 0, 0.3);
+            animation: expand 4s ease-in-out infinite;
+        }
+
+        .glow-1 { width: 500px; height: 500px; animation-delay: 0s; }
+        .glow-2 { width: 600px; height: 600px; animation-delay: 1s; }
+        .glow-3 { width: 700px; height: 700px; animation-delay: 2s; }
+
+        @keyframes expand {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; }
+            50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.6; }
+        }
+
+        section {
+            padding: 8rem 3rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 5rem;
+        }
+
+        .section-badge {
+            display: inline-block;
+            padding: 0.8rem 2rem;
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 140, 0, 0.2));
+            border: 2px solid #FFD700;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            margin-bottom: 2rem;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+
+        h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(3rem, 8vw, 5rem);
+            font-weight: 900;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #FFD700, #FF8C00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .section-description {
+            font-size: 1.3rem;
+            opacity: 0.8;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 3rem;
+        }
+
+        .product-card {
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.05), rgba(255, 140, 0, 0.05));
+            backdrop-filter: blur(20px);
+            border: 2px solid rgba(255, 215, 0, 0.3);
+            border-radius: 40px;
+            padding: 3rem;
+            text-align: center;
+            transition: all 0.5s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .product-card::before {
+            content: '';
+            position: absolute;
+            top: -100%;
+            left: -100%;
+            width: 300%;
+            height: 300%;
+            background: linear-gradient(45deg, transparent, rgba(255, 215, 0, 0.1), transparent);
+            transform: rotate(45deg);
+            transition: all 0.8s;
+        }
+
+        .product-card:hover::before {
+            top: -50%;
+            left: -50%;
+        }
+
+        .product-card:hover {
+            transform: translateY(-25px) scale(1.03);
+            border-color: #FFD700;
+            box-shadow: 0 40px 80px rgba(255, 215, 0, 0.4);
+        }
+
+        .product-badge {
+            position: absolute;
+            top: 2rem;
+            right: 2rem;
+            padding: 0.7rem 1.5rem;
+            background: linear-gradient(135deg, #FFD700, #FF8C00);
+            color: #000;
+            border-radius: 25px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .product-icon {
+            font-size: 7rem;
+            margin-bottom: 2rem;
+            display: inline-block;
+            filter: drop-shadow(0 15px 40px rgba(255, 215, 0, 0.6));
+            animation: bounce 3s ease-in-out infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-15px); }
+        }
+
+        .product-card h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.2rem;
+            font-weight: 900;
+            margin-bottom: 1rem;
+            color: #FFD700;
+        }
+
+        .product-description {
+            opacity: 0.9;
+            margin-bottom: 2rem;
+            line-height: 1.8;
+        }
+
+        .product-specs {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+
+        .spec {
+            padding: 0.8rem 1.5rem;
+            background: rgba(255, 215, 0, 0.1);
+            border: 2px solid rgba(255, 215, 0, 0.4);
+            border-radius: 25px;
+            font-weight: 700;
+        }
+
+        .price {
+            font-family: 'Playfair Display', serif;
+            font-size: 4rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #FFD700, #FF8C00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 2rem 0;
+        }
+
+        .buy-btn {
+            width: 100%;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #FFD700, #FF8C00);
+            color: #000;
+            border: none;
+            border-radius: 50px;
+            font-weight: 800;
+            font-size: 1.2rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.4s;
+            box-shadow: 0 15px 50px rgba(255, 215, 0, 0.4);
+        }
+
+        .buy-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 20px 60px rgba(255, 215, 0, 0.7);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2.5rem;
+        }
+
+        .feature-card {
+            background: rgba(255, 215, 0, 0.05);
+            backdrop-filter: blur(20px);
+            border: 2px solid rgba(255, 215, 0, 0.2);
+            border-radius: 30px;
+            padding: 3rem 2rem;
+            text-align: center;
+            transition: all 0.4s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-15px);
+            border-color: #FFD700;
+            box-shadow: 0 30px 60px rgba(255, 215, 0, 0.3);
+        }
+
+        .feature-icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: #FFD700;
+        }
+
+        .feature-card p {
+            opacity: 0.9;
+            line-height: 1.7;
+        }
+
+        .contact {
+            text-align: center;
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), rgba(255, 140, 0, 0.1));
+            border: 3px solid rgba(255, 215, 0, 0.3);
+            border-radius: 50px;
+            padding: 6rem 3rem;
+        }
+
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 3rem;
+            margin-top: 4rem;
+        }
+
+        .contact-card {
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(255, 215, 0, 0.3);
+            border-radius: 30px;
+            padding: 3rem 2rem;
+            transition: all 0.4s;
+        }
+
+        .contact-card:hover {
+            transform: translateY(-15px);
+            border-color: #FFD700;
+            box-shadow: 0 30px 60px rgba(255, 215, 0, 0.4);
+        }
+
+        .contact-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #FFD700, #FF8C00);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            margin: 0 auto 2rem;
+        }
+
+        .contact-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #FFD700;
+        }
+
+        .contact-card p {
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        footer {
+            background: rgba(0, 0, 0, 0.9);
+            border-top: 2px solid rgba(255, 215, 0, 0.3);
+            padding: 4rem 3rem;
+            text-align: center;
+        }
+
+        .footer-logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #FFD700, #FF8C00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        @media (max-width: 768px) {
+            nav { padding: 0 1.5rem; }
+            .nav-links { display: none; }
+            .hero { padding: 6rem 1.5rem 3rem; }
+            .hero-product { height: 450px; }
+            .product-bottle {
+                width: 300px;
+                height: 420px;
+                font-size: 10rem;
+            }
+            section { padding: 4rem 1.5rem; }
+            .cta-buttons { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animated"></div>
+
+    <header>
+        <nav>
+            <div class="logo">
+                <span class="logo-icon">🏺</span>
+                Nước Mắm Bình Định
+            </div>
+            <ul class="nav-links">
+                <li><a href="#home">Trang chủ</a></li>
+                <li><a href="#products">Sản phẩm</a></li>
+                <li><a href="#features">Ưu điểm</a></li>
+                <li><a href="#contact">Liên hệ</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <section id="home" class="hero">
+        <div class="hero-content">
+            <div class="hero-badge">⭐ OCOP 4 SAO BÌNH ĐỊNH</div>
+            <h1>
+                NƯỚC MẮM<br>
+                <span class="hero-highlight">TRUYỀN THỐNG</span>
+            </h1>
+            <p class="hero-subtitle">Tinh hoa biển cả • Công thức gia truyền 3 đời • Ủ tự nhiên 18 tháng</p>
+            <div class="cta-buttons">
+                <a href="#products" class="btn btn-primary">Khám phá ngay</a>
+                <a href="#contact" class="btn btn-secondary">Liên hệ đặt hàng</a>
+            </div>
+            
+            <div class="hero-product">
+                <div class="glow-circle glow-1"></div>
+                <div class="glow-circle glow-2"></div>
+                <div class="glow-circle glow-3"></div>
+                <div class="product-bottle">🏺</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="products">
+        <div class="section-header">
+            <div class="section-badge">SẢN PHẨM</div>
+            <h2>Dòng sản phẩm đặc biệt</h2>
+            <p class="section-description">Từ cao cấp đến phổ thông, mỗi sản phẩm đều mang đậm dấu ấn Bình Định</p>
+        </div>
+
+        <div class="product-grid">
+            <div class="product-card">
+                <div class="product-badge">Premium</div>
+                <span class="product-icon">🥇</span>
+                <h3>Nước Mắm Nhỉ</h3>
+                <p class="product-description">Sản phẩm cao cấp nhất, lên men 18 tháng trong thùng gỗ. Đạm độ cao, hương vị tinh tế.</p>
+                <div class="product-specs">
+                    <span class="spec">35-40°N</span>
+                    <span class="spec">18 tháng</span>
+                </div>
+                <div class="price">350K <span style="font-size: 1.5rem; opacity: 0.7;">/lít</span></div>
+                <button class="buy-btn" onclick="orderProduct('Nước Mắm Nhỉ')">Đặt hàng ngay</button>
+            </div>
+
+            <div class="product-card">
+                <div class="product-badge">Best Seller</div>
+                <span class="product-icon">🥈</span>
+                <h3>Nước Mắm Cá Cơm</h3>
+                <p class="product-description">Đa năng cho cả chấm và nấu ăn. Hương vị đậm đà, chuẩn vị Bình Định.</p>
+                <div class="product-specs">
+                    <span class="spec">30-35°N</span>
+                    <span class="spec">12 tháng</span>
+                </div>
+                <div class="price">250K <span style="font-size: 1.5rem; opacity: 0.7;">/lít</span></div>
+                <button class="buy-btn" onclick="orderProduct('Nước Mắm Cá Cơm')">Đặt hàng ngay</button>
+            </div>
+
+            <div class="product-card">
+                <div class="product-badge">Gia đình</div>
+                <span class="product-icon">🥉</span>
+                <h3>Nước Mắm Pha Chế</h3>
+                <p class="product-description">Lựa chọn kinh tế, vẫn giữ trọn chất lượng và hương vị truyền thống.</p>
+                <div class="product-specs">
+                    <span class="spec">25-30°N</span>
+                    <span class="spec">10 tháng</span>
+                </div>
+                <div class="price">180K <span style="font-size: 1.5rem; opacity: 0.7;">/lít</span></div>
+                <button class="buy-btn" onclick="orderProduct('Nước Mắm Pha Chế')">Đặt hàng ngay</button>
+            </div>
+        </div>
+    </section>
+
+    <section id="features">
+        <div class="section-header">
+            <div class="section-badge">ƯU ĐIỂM</div>
+            <h2>Điều gì làm nên sự khác biệt?</h2>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">✓</div>
+                <h3>100% Tự Nhiên</h3>
+                <p>Không chất bảo quản, không phẩm màu, không hương liệu tổng hợp.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🐟</div>
+                <h3>Cá Cơm Tươi</h3>
+                <p>Nguyên liệu chọn lọc từ vùng biển Quy Nhơn, đảm bảo chất lượng cao nhất.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">⏱️</div>
+                <h3>Ủ Truyền Thống</h3>
+                <p>Lên men trong thùng gỗ theo phương pháp gia truyền 12-18 tháng.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🏆</div>
+                <h3>Chất Lượng Cao</h3>
+                <p>Đạt chuẩn VSATTP và vinh dự OCOP 4 sao tỉnh Bình Định.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="contact" class="contact">
+        <div class="section-header">
+            <div class="section-badge">LIÊN HỆ</div>
+            <h2>Đặt hàng ngay hôm nay</h2>
+        </div>
+
+        <div class="contact-grid">
+            <div class="contact-card">
+                <div class="contact-icon">📞</div>
+                <h3>Điện thoại</h3>
+                <p>0123 456 789</p>
+            </div>
+
+            <div class="contact-card">
+                <div class="contact-icon">📧</div>
+                <h3>Email</h3>
+                <p>nuocmam@binhdinh.vn</p>
+            </div>
+
+            <div class="contact-card">
+                <div class="contact-icon">📍</div>
+                <h3>Địa chỉ</h3>
+                <p>Quy Nhơn, Bình Định</p>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="footer-logo">🏺 Nước Mắm Bình Định</div>
+        <p style="opacity: 0.7; margin-top: 1rem;">© 2025 Nước Mắm Truyền Thống Bình Định<br>Sản phẩm nhà làm - Chất lượng tâm huyết</p>
+    </footer>
+
+    <script>
+        function orderProduct(productName) {
+            alert('Cảm ơn bạn quan tâm đến ' + productName + '!\n\nVui lòng liên hệ:\n📞 0123 456 789\n📧 nuocmam@binhdinh.vn\n\nĐể đặt hàng và nhận tư vấn chi tiết!');
+        }
+
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
