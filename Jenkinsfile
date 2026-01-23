@@ -31,34 +31,35 @@ pipeline {
         stage('Send to Gemini') {
             steps {
                 script {
-                    // Lấy các giá trị cần thiết bằng groovy để tránh lỗi nháy đơn/kép trong shell
+                    // 1. Lấy thông tin commit
                     def commitHash = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
                     def authorName = sh(script: "git log -1 --pretty=%an", returnStdout: true).trim()
                     
+                    // 2. Tạo nội dung file JSON và ghi ra file bằng lệnh của Jenkins (writeJSON hoặc writeFile)
+                    // Lưu ý: DIFF_BASE64 được tạo trực tiếp trong shell để xử lý file lớn an toàn
                     sh """
-                        # Mã hóa base64 và xóa các ký tự xuống dòng
                         DIFF_BASE64=\$(base64 diff.txt | tr -d '\\n')
+                        
+                        # Tạo file payload bằng printf để tránh các lỗi ký tự đặc biệt
+                        printf '{"repo":"Fish-sauce","git_url":"https://github.com/levanhieu98/Fish-sauce.git","branch":"main","commit":"%s","author":"%s","diff_base64":"%s"}' \
+                        "$commitHash" "$authorName" "\$DIFF_BASE64" > payload.json
+                    """
 
-                        # Tạo file payload.json để gửi thay vì truyền trực tiếp vào câu lệnh curl
-                        cat <<EOF > payload.json
-                        {
-                            "repo": "Fish-sauce",
-                            "git_url": "https://github.com/levanhieu98/Fish-sauce.git",
-                            "branch": "main",
-                            "commit": "${commitHash}",
-                            "author": "${authorName}",
-                            "diff_base64": "\$DIFF_BASE64"
-                        }
-                        EOF
-                        echo "Gửi dữ liệu đến Webhook..."
-                        # Sử dụng -d @filename để curl tự đọc file JSON chuẩn
-                        RESPONSE=\$(curl -s -L -X POST "${env.WEBHOOK_URL}" \\
-                            -H "Content-Type: application/json" \\
-                            -d @payload.json)
-
-                        echo "--- Webhook Response ---"
-                        echo "\$RESPONSE"
-                        echo "------------------------"
+                    // 3. Gửi Webhook
+                    sh """
+                        echo "Đang gửi dữ liệu đến Webhook..."
+                        if [ -f payload.json ]; then
+                            RESPONSE=\$(curl -s -L -X POST "${env.WEBHOOK_URL}" \
+                                -H "Content-Type: application/json" \
+                                -d @payload.json)
+                            
+                            echo "--- Webhook Response ---"
+                            echo "\$RESPONSE"
+                            echo "------------------------"
+                        else
+                            echo "LỖI: Không tìm thấy file payload.json"
+                            exit 1
+                        fi
                     """
                 }
             }
