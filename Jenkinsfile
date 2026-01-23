@@ -31,7 +31,7 @@ pipeline {
             sh '''
             DIFF_BASE64=$(base64 diff.txt | tr -d '\\n')
 
-            RESPONSE=$(curl -s -L -X POST "$WEBHOOK_URL" \
+            RESPONSE=$(curl -s -X POST "$WEBHOOK_URL" \
                 -H "Content-Type: application/json" \
                 -d '{
                 "repo": "Fish-sauce",
