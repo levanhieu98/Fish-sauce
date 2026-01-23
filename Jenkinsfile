@@ -3,7 +3,7 @@ pipeline {
 
   environment {
     GIT_CREDENTIAL = 'demo_github'
-    WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwYc5DYob3VyhMEBtmuyhATBbVE2E_iJlctyozHwkzn1tUivYldcyE1OUYns06ITtHs/exec'
+    WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbx6x1kIAOhFYUcdOH6eIzfCnxfKYcv8xsOMtScRi4-OHypue7f_2LJ-TmAuvB66EV5zBA/exec'
   }
 
   stages {
@@ -27,21 +27,23 @@ pipeline {
     }
 
     stage('Send to Gemini') {
-      steps {
+    steps {
         sh '''
-          curl -X POST "$WEBHOOK_URL" \
-          -H "Content-Type: application/json" \
-          -d '{
+        DIFF_BASE64=$(base64 -w 0 diff.txt)
+
+        curl -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{
             "repo": "Fish-sauce",
             "git_url": "https://github.com/levanhieu98/Fish-sauce.git",
             "branch": "main",
             "commit": "'"$(git rev-parse HEAD)"'",
             "author": "'"$(git log -1 --pretty=%an)"'",
-            "diff": "'"$(sed 's/"/\\"/g' diff.txt)"'"
-          }'
+            "diff_base64": "'"$DIFF_BASE64"'"
+            }'
         '''
-      }
     }
+}
   }
 
   post {
