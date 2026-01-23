@@ -3,7 +3,7 @@ pipeline {
 
   environment {
     GIT_CREDENTIAL = 'demo_github'
-    WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbx6x1kIAOhFYUcdOH6eIzfCnxfKYcv8xsOMtScRi4-OHypue7f_2LJ-TmAuvB66EV5zBA/exec'
+    WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxJxi5a67DWGDZtIp9URNHBuNkIIkCkMINyXkzchgD3gWwO8p2MvA9NYyYCDD9xI82ZKQ/exec'
   }
 
   stages {
