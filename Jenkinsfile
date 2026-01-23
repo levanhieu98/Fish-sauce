@@ -5,7 +5,7 @@ pipeline {
     environment {
         GIT_CREDENTIAL = 'demo_github'
         // DÙNG URL MỚI NHẤT BẠN VỪA TẠO
-        WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwPL7ZOj-g8IeS6IiotbFYpTYijXKubHIR_5Nt0QYTCxIir4Vchv94tE00TMLsxe5bZ/exec'
+        WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbzdGapHHakI0EYk8ZRVcDca7oc1edCJOoIHGUYYB7soiDhQpye5Nr-fpmNhWa0udRSg/exec'
     }
     stages {
         stage('Checkout') {
@@ -33,15 +33,18 @@ pipeline {
                     
                     writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
-                    sh """
-                        echo "--- Gửi thử nghiệm ---"
-                        # Loại bỏ cờ -f và tham số URL để tránh 404
+                   sh """
+                        echo "--- Đang gửi yêu cầu Review ---"
                         curl -s -L -X POST "${env.WEBHOOK_URL}" \
-                             -H "Content-Type: application/json" \
-                             --data-binary @payload.json > response.json
+                            -H "Content-Type: application/json" \
+                            -d @payload.json > response.json
                         
-                        echo "Kết quả từ Google:"
-                        cat response.json
+                        if grep -q "success" response.json; then
+                            echo "✅ Đã gửi dữ liệu thành công! Kiểm tra Google Sheet và Google Chat nhé."
+                        else
+                            echo "⚠️ Có phản hồi nhưng có thể bị Redirect. Hãy kiểm tra Google Sheet."
+                            cat response.json
+                        fi
                     """
                 }
             }
