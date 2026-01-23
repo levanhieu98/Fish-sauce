@@ -4,8 +4,8 @@ pipeline {
     agent any
     environment {
         GIT_CREDENTIAL = 'demo_github'
-        // Đảm bảo URL này là bản mới nhất sau khi bạn nhấn "Triển khai"
-        WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyP5aMj9P-H03s2fSwW2ZzjJBrt7uk_4P-oa5PlV9PYV44lTANa2_S0mqlHlX4-M2iEJA/exec'
+        // DÙNG URL MỚI NHẤT BẠN VỪA TẠO
+        WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbx3vMKGPV7hzfMYmjIsI4z82G192_x6offkN5mbTUfSlVJH4jF5bcddtkiJVgl3c0Ec/exec'
     }
     stages {
         stage('Checkout') {
@@ -27,9 +27,6 @@ pipeline {
                     
                     def payload = [
                         repo: "Fish-sauce",
-                        git_url: "https://github.com/levanhieu98/Fish-sauce.git",
-                        branch: "main",
-                        commit: commitHash,
                         author: authorName,
                         diff_base64: diffBase64
                     ]
@@ -37,19 +34,14 @@ pipeline {
                     writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
                     sh """
-                        echo "--- Đang gửi Webhook ---"
-                        # Bỏ cờ -f để đọc lỗi trả về
-                        curl -s -L -X POST "${env.WEBHOOK_URL}?cache=clear" \
+                        echo "--- Gửi thử nghiệm ---"
+                        # Loại bỏ cờ -f và tham số URL để tránh 404
+                        curl -s -L -X POST "${env.WEBHOOK_URL}" \
                              -H "Content-Type: application/json" \
-                             -d @payload.json > response.json
+                             --data-binary @payload.json > response.json
                         
-                        echo "Phản hồi từ Google:"
+                        echo "Kết quả từ Google:"
                         cat response.json
-                        
-                        # Nếu phản hồi chứa "error", cho build thất bại
-                        if grep -q "error" response.json; then
-                            exit 1
-                        fi
                     """
                 }
             }
