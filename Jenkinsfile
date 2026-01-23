@@ -30,9 +30,8 @@ pipeline {
         steps {
             sh '''
             DIFF_BASE64=$(base64 diff.txt | tr -d '\\n')
-            export DIFF_BASE64
 
-            RESPONSE=$(curl -s -X POST "$WEBHOOK_URL" \
+            RESPONSE=$(curl -s -L -X POST "$WEBHOOK_URL" \
                 -H "Content-Type: application/json" \
                 -d '{
                 "repo": "Fish-sauce",
@@ -43,10 +42,12 @@ pipeline {
                 "diff_base64": "'"$DIFF_BASE64"'"
                 }')
 
-            echo "Webhook response: $RESPONSE"
+            echo "Webhook response:"
+            echo "$RESPONSE"
             '''
         }
     }
+
   }
 
   post {
