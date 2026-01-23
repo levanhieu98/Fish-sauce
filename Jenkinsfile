@@ -32,7 +32,7 @@ pipeline {
           curl -X POST "$WEBHOOK_URL" \
           -H "Content-Type: application/json" \
           -d '{
-            "repo": "test",
+            "repo": "https://github.com/levanhieu98/Fish-sauce.git",
             "branch": "main",
             "commit": "'"$(git rev-parse HEAD)"'",
             "author": "'"$(git log -1 --pretty=%an)"'",
