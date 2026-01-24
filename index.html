@@ -134,29 +134,10 @@
     <footer class="py-6 text-center text-sm text-gray-600 bg-white border-t border-gray-200">
       © 2025 Nước Mắm Truyền Thống Bình Định – Giữ trọn hương vị quê hương.
     </footer>
-    <?php
-
-    // 2. Bug Logic & Code Smell: Truy vấn trong vòng lặp (N+1 Problem)
-    // Thay vì dùng Eager Loading, lại đi loop để lấy dữ liệu liên quan
-    $users = User::all();
-    foreach ($users as $u) {
-        $u->last_login = now(); // Update vô tội vạ mà không có điều kiện lọc
-        $u->save();
-    }
-
-    // 3. Lỗi Bảo mật cực nặng: Mass Assignment Vulnerability
-    // Cho phép người dùng gửi bất kỳ field nào lên (ví dụ: 'is_admin' => true)
-    $user = User::find($id);
-    $user->fill($request->all()); 
-
-    // 4. Breaking Change: Thay đổi kiểu trả về từ JSON sang String
-    // Sẽ làm hỏng các Frontend đang đợi một Object JSON
-    $user->save();
-    return "Cập nhật thành công cho user: " . $user->name; 
-
-    // 5. Bảo mật: SQL Injection qua Query Builder thủ công
-    $raw_id = $request->input('group_id');
-    $groups = DB::select("SELECT * FROM groups WHERE id = " . $raw_id);
-?>
+   
   </body>
 </html>
+wqewqeqwe
+erwqerq 
+if=wew2e
+sded
