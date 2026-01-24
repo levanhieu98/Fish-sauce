@@ -137,13 +137,17 @@
    
   </body>
 </html>
-wqewqeqwe
-erwqerq 
-if=wew2e
-sded
+<?php
+  if($_SERVER["REQUEST_METHOD"] == "POST") {
+    $name = htmlspecialchars($_POST['name']);
+    $phone = htmlspecialchars($_POST['phone']);
+    $message = htmlspecialchars($_POST['message']);
 
-if(www=www) {
-  return true;
-}else {
-  return false;
-}
+    // Gửi email hoặc lưu vào cơ sở dữ liệu ở đây
+
+    echo "<script>alert('Cảm ơn bạn đã liên hệ! Chúng tôi sẽ phản hồi sớm nhất có thể.');</script>";
+  }
+  for($i = 0; $i < 10; $i++) {
+    echo "\n";    
+  }
+   ?>

@@ -5,7 +5,7 @@ pipeline {
     environment {
         GIT_CREDENTIAL = 'demo_github'
         // DÙNG URL MỚI NHẤT BẠN VỪA TẠO
-        WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyye9NbSVlJWL2FrjO9hevHm_WEjMwj_pvav78LxU8upsHUWRcpgAVIJJ2jKD6j7mUy/exec'
+        WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyXnwoWDtIrOd9rgsrioa1KLg52sRPvHNJdvcf42PwJjIkhqaEOi0zTiSzwmoHRe73T/exec'
     }
     stages {
         stage('Checkout') {
