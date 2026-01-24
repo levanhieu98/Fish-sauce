@@ -10,7 +10,11 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git(url: 'https://github.com/levanhieu98/Fish-sauce.git', branch: 'main', credentialsId: env.GIT_CREDENTIAL)
+                git(
+                    url: 'https://github.com/levanhieu98/Fish-sauce.git', 
+                    branch: 'main', 
+                    credentialsId: env.GIT_CREDENTIAL
+                )
             }
         }
         stage('Collect Diff') {
@@ -43,7 +47,6 @@ pipeline {
                             echo "✅ Đã gửi dữ liệu thành công! Kiểm tra Google Sheet và Google Chat nhé."
                         else
                             echo "⚠️ Có phản hồi nhưng có thể bị Redirect. Hãy kiểm tra Google Sheet."
-                            cat response.json
                         fi
                     """
                 }
