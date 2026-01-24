@@ -8,11 +8,6 @@ pipeline {
         WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwM4hnn0WfFxSuNxNikb5ieSQ5FjR0FlmopuuUiNXGmttadFQVSLm9AzRDEMFLANgx0/exec'
     }
 
-    options {
-        timeout(time: 5, unit: 'MINUTES')
-        retries(1)
-    }
-
     stages {
 
         stage('Checkout') {
