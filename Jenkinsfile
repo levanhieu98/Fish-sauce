@@ -71,6 +71,7 @@ pipeline {
                     ).trim()
 
                     def payload = [
+                        repo         : PROJECT_NAME, 
                         project      : PROJECT_NAME,
                         commit       : commitHash,
                         author       : authorName,
