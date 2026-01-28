@@ -96,14 +96,30 @@ pipeline {
                         build_url    : env.BUILD_URL
                     ]
 
-                    writeFile file: 'payload.json',
-                              text: JsonOutput.toJson(payload)
+                    // writeFile file: 'payload.json',
+                    //           text: JsonOutput.toJson(payload)
 
-                    sh '''
-                      curl -s -L -X POST "$WEBHOOK_URL" \
-                        -H "Content-Type: application/json" \
-                        --data-binary @payload.json
-                    '''
+                    // sh '''
+                    //   curl -s -L -X POST "$WEBHOOK_URL" \
+                    //     -H "Content-Type: application/json" \
+                    //     --data-binary @payload.json
+                    // '''
+
+                    writeFile file: 'payload.json',
+                text: groovy.json.JsonOutput.prettyPrint(
+                        groovy.json.JsonOutput.toJson(payload)
+                      )
+
+      sh '''
+        echo "===== PAYLOAD ====="
+        cat payload.json
+        echo "==================="
+
+        curl -X POST "$WEBHOOK_URL" \
+          -H "Content-Type: application/json" \
+          --fail \
+          --data @payload.json
+      '''
                 }
             }
         }
