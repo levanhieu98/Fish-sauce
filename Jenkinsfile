@@ -3,87 +3,60 @@ import groovy.json.JsonOutput
 pipeline {
   agent any
 
-  /*********************************
-   * 1. INPUT – REVIEWER CHỈ CHỌN BASE
-   *********************************/
   parameters {
-    string(
-      name: 'TARGET_BRANCH',
-      defaultValue: 'main',
-      description: 'Base branch để so sánh (ví dụ: main, develop)'
-    )
-    booleanParam(
-      name: 'FORCE_REVIEW',
-      defaultValue: false,
-      description: 'Force review ngay cả khi diff nhỏ'
-    )
+    string(name: 'SOURCE_BRANCH', description: 'Branch cần review (ví dụ: review_code)')
+    string(name: 'TARGET_BRANCH', defaultValue: 'main', description: 'Base branch')
+    string(name: 'PR_ID', defaultValue: 'manual', description: 'ID (optional)')
   }
 
   environment {
-    PROJECT_NAME  = 'Fish-sauce'
     GIT_CREDENTIAL = 'demo_github'
-    WEBHOOK_URL   = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
-    MAX_DIFF_SIZE = '300000'
+    PROJECT_NAME   = 'Fish-sauce'
+    WEBHOOK_URL    = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
+    MAX_DIFF_SIZE  = '300000'
   }
 
   stages {
 
-    /*********************************
-     * 2. CHECKOUT (HEAD = BRANCH ĐANG REVIEW)
-     *********************************/
-    stage('Checkout Source Branch') {
-      steps {
-        checkout scm
-        sh 'git fetch --all --prune'
-      }
-    }
-
-    /*********************************
-     * 3. COLLECT METADATA
-     *********************************/
-    stage('Collect Context') {
+    stage('Validate Input') {
       steps {
         script {
-          env.SOURCE_BRANCH = sh(
-            script: "git rev-parse --abbrev-ref HEAD",
-            returnStdout: true
-          ).trim()
-
-          env.COMMIT_HASH = sh(
-            script: "git rev-parse HEAD",
-            returnStdout: true
-          ).trim()
-
-          env.AUTHOR = sh(
-            script: "git log -1 --pretty=%an",
-            returnStdout: true
-          ).trim()
-
-          echo "🔍 Reviewing branch: ${env.SOURCE_BRANCH}"
-          echo "➡️ Target branch: ${params.TARGET_BRANCH}"
+          if (!params.SOURCE_BRANCH?.trim()) {
+            error "❌ SOURCE_BRANCH is required"
+          }
+          if (params.SOURCE_BRANCH == params.TARGET_BRANCH) {
+            error "❌ SOURCE_BRANCH must be different from TARGET_BRANCH"
+          }
         }
       }
     }
 
-    /*********************************
-     * 4. COLLECT DIFF
-     *********************************/
+    stage('Checkout Source Branch') {
+      steps {
+        checkout([
+          $class: 'GitSCM',
+          branches: [[name: "refs/heads/${params.SOURCE_BRANCH}"]],
+          userRemoteConfigs: [[
+            url: 'https://github.com/levanhieu98/Fish-sauce.git',
+            credentialsId: env.GIT_CREDENTIAL
+          ]]
+        ])
+
+        sh 'git fetch origin'
+      }
+    }
+
     stage('Collect Diff') {
       steps {
         sh """
-          echo "📄 Collecting diff..."
           git fetch origin ${params.TARGET_BRANCH}
-
           git diff origin/${params.TARGET_BRANCH}...HEAD > diff.txt
           wc -c diff.txt
         """
       }
     }
 
-    /*********************************
-     * 5. VALIDATE DIFF
-     *********************************/
-    stage('Validate Diff') {
+    stage('Send to Gemini AI') {
       steps {
         script {
           def diffSize = sh(
@@ -91,66 +64,28 @@ pipeline {
             returnStdout: true
           ).trim().toInteger()
 
-          echo "📦 Diff size: ${diffSize} bytes"
-
-          if (diffSize < 50 && !params.FORCE_REVIEW) {
-            error "❌ Diff quá nhỏ – không cần AI review"
-          }
-
-          if (diffSize > env.MAX_DIFF_SIZE.toInteger()) {
-            error "❌ Diff quá lớn (${diffSize} bytes)"
-          }
-
-          env.DIFF_SIZE = diffSize.toString()
-        }
-      }
-    }
-
-    /*********************************
-     * 6. SEND TO GEMINI AI
-     *********************************/
-    stage('Send to Gemini AI') {
-      steps {
-        script {
-          def diffBase64 = sh(
-            script: "base64 diff.txt | tr -d '\\n'",
-            returnStdout: true
-          ).trim()
+          if (diffSize < 50) error "❌ Diff quá nhỏ"
+          if (diffSize > env.MAX_DIFF_SIZE.toInteger()) error "❌ Diff quá lớn"
 
           def payload = [
-            repo        : env.PROJECT_NAME,
             project     : env.PROJECT_NAME,
             mode        : "MANUAL_BRANCH_REVIEW",
-            source      : env.SOURCE_BRANCH,
+            pr_number   : params.PR_ID,
+            source      : params.SOURCE_BRANCH,
             target      : params.TARGET_BRANCH,
-            commit      : env.COMMIT_HASH,
-            author      : env.AUTHOR,
-            diff_size   : env.DIFF_SIZE,
-            diff_base64 : diffBase64,
-            rules       : "security,performance,clean-code"
+            diff_size   : diffSize,
+            diff_base64 : sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim()
           ]
 
           writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
-          sh '''
-            echo "🚀 Sending diff to Gemini AI..."
+          sh """
             curl -s -X POST "$WEBHOOK_URL" \
               -H "Content-Type: application/json" \
-              -d @payload.json > response.json
-
-            echo "🤖 Gemini AI response received"
-          '''
+              -d @payload.json
+          """
         }
       }
-    }
-  }
-
-  post {
-    success {
-      echo "✅ AI Code Review completed successfully"
-    }
-    failure {
-      echo "❌ AI Code Review failed"
     }
   }
 }
