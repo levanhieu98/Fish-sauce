@@ -1,180 +1,166 @@
 import groovy.json.JsonOutput
 
 pipeline {
-  agent any
+    agent any
 
-  options {
-    timestamps()
-    ansiColor('xterm')
-    disableConcurrentBuilds()
-    timeout(time: 15, unit: 'MINUTES')
-  }
+    environment {
+        GIT_CREDENTIAL = 'demo_github'
+        BASE_BRANCH = 'origin/main'
+        WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
+        PROJECT_NAME = 'Fish-sauce'
+    }
 
-  parameters {
-    string(
-      name: 'SOURCE_BRANCH',
-      trim: true,
-      description: 'Branch cần review (vd: feature/login)'
-    )
-    string(
-      name: 'TARGET_BRANCH',
-      defaultValue: 'main',
-      trim: true,
-      description: 'Base branch để so sánh'
-    )
-    string(
-      name: 'PR_ID',
-      defaultValue: 'manual',
-      trim: true,
-      description: 'PR ID (optional)'
-    )
-  }
+    stages {
 
-  environment {
-    GIT_CREDENTIAL = 'demo_github'
-    GIT_REPO_URL   = 'https://github.com/levanhieu98/Fish-sauce.git'
-
-    PROJECT_NAME  = 'Fish-sauce'
-    REVIEW_MODE   = 'MANUAL_BRANCH_REVIEW'
-
-    WEBHOOK_URL   = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
-
-    MAX_DIFF_SIZE = '300000' // bytes
-  }
-
-  stages {
-
-    /* =======================
-     * 1. VALIDATE INPUT
-     * ======================= */
-    stage('Validate Input') {
-      steps {
-        script {
-          if (!params.SOURCE_BRANCH) {
-            error "❌ SOURCE_BRANCH is required"
-          }
-          if (params.SOURCE_BRANCH == params.TARGET_BRANCH) {
-            error "❌ SOURCE_BRANCH must be different from TARGET_BRANCH"
-          }
+        stage('Checkout') {
+            steps {
+                git(
+                    url: 'https://github.com/levanhieu98/Fish-sauce.git',
+                    branch: 'main',
+                    credentialsId: env.GIT_CREDENTIAL
+                )
+                sh 'git fetch origin main'
+            }
         }
-      }
-    }
 
-    /* =======================
-     * 2. CHECKOUT SOURCE
-     * ======================= */
-    stage('Checkout Source Branch') {
-      steps {
-        checkout([
-          $class: 'GitSCM',
-          branches: [[name: "refs/heads/${params.SOURCE_BRANCH}"]],
-          userRemoteConfigs: [[
-            url: env.GIT_REPO_URL,
-            credentialsId: env.GIT_CREDENTIAL
-          ]],
-          extensions: [
-            [$class: 'CleanBeforeCheckout'],
-            [$class: 'CloneOption', noTags: true, shallow: false]
-          ]
-        ])
-      }
-    }
+        stage('Collect Diff') {
+            steps {
+                sh '''
+                  echo "--- Collecting git diff ---"
 
-    /* =======================
-     * 3. COLLECT DIFF
-     * ======================= */
-    stage('Collect Diff') {
-      steps {
-        sh """
-          set -e
-          git fetch origin ${params.TARGET_BRANCH}
-          git diff origin/${params.TARGET_BRANCH}..HEAD > diff.txt
-          wc -c diff.txt
-        """
-      }
-    }
+                  # Nếu có commit trước → diff bình thường
+                  if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                    git diff HEAD~1 HEAD > diff.txt
+                  else
+                    # Commit đầu tiên
+                    git show HEAD > diff.txt
+                  fi
 
-    /* =======================
-     * 4. VALIDATE DIFF
-     * ======================= */
-    stage('Validate Diff') {
-      steps {
-        script {
-          def diffSize = sh(
-            script: "wc -c diff.txt | awk '{print \$1}'",
-            returnStdout: true
-          ).trim().toInteger()
-
-          echo "📦 Diff size: ${diffSize} bytes"
-
-          if (diffSize < 50) {
-            error "❌ Diff quá nhỏ – không đủ dữ liệu review"
-          }
-
-          if (diffSize > env.MAX_DIFF_SIZE.toInteger()) {
-            error "❌ Diff quá lớn – vượt giới hạn ${env.MAX_DIFF_SIZE} bytes"
-          }
-
-          env.DIFF_SIZE = diffSize.toString()
+                  echo "--- Diff preview ---"
+                  head -200 diff.txt
+                '''
+            }
         }
-      }
-    }
 
-    /* =======================
-     * 5. SEND TO GEMINI (GAS)
-     * ======================= */
-    stage('Send to Gemini AI') {
-      steps {
-        script {
+        stage('Send to Gemini') {
+            steps {
+                script {
+                    def commitHash = sh(
+                        script: "git rev-parse HEAD",
+                        returnStdout: true
+                    ).trim()
 
-          sh "command -v base64 >/dev/null"
+                    def authorName = sh(
+                        script: "git log -1 --pretty=%an",
+                        returnStdout: true
+                    ).trim()
 
-          def diffBase64 = sh(
-            script: "cat diff.txt | base64 | tr -d '\\n'",
-            returnStdout: true
-          ).trim()
+                    def diffSize = sh(
+                        script: "wc -c diff.txt | awk '{print \$1}'",
+                        returnStdout: true
+                    ).trim()
 
-          def payload = [
-            project     : env.PROJECT_NAME,
-            mode        : env.REVIEW_MODE,
-            pr_number   : params.PR_ID,
-            source      : params.SOURCE_BRANCH,
-            target      : params.TARGET_BRANCH,
-            diff_size   : env.DIFF_SIZE,
-            diff_base64 : diffBase64,
-            commit      : sh(script: "git rev-parse HEAD", returnStdout: true).trim(),
-            author      : sh(script: "git log -1 --pretty=format:'%an'", returnStdout: true).trim(),
-            timestamp   : new Date().format("yyyy-MM-dd HH:mm:ss", TimeZone.getTimeZone('Asia/Ho_Chi_Minh'))
-          ]
+                    if (diffSize.toInteger() < 50) {
+                        error "❌ Diff quá nhỏ hoặc rỗng – không gửi AI review"
+                    }
 
-          writeFile(
-            file: 'payload.json',
-            text: JsonOutput.prettyPrint(JsonOutput.toJson(payload))
-          )
+                    // Encode base64 để tránh lỗi ký tự
+                    def diffBase64 = sh(
+                        script: "base64 diff.txt | tr -d '\\n'",
+                        returnStdout: true
+                    ).trim()
 
-          sh """
-            curl -s -X POST "${env.WEBHOOK_URL}" \
-              -H "Content-Type: application/json" \
-              --data @payload.json
-          """
+                    def payload = [
+                        repo         : PROJECT_NAME, 
+                        project      : PROJECT_NAME,
+                        commit       : commitHash,
+                        author       : authorName,
+                        diff_base64  : diffBase64,
+                        diff_size    : diffSize
+                    ]
+
+                    writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
+
+                    sh '''
+                        echo "--- Sending payload to Gemini ---"
+                        curl -s -L -X POST "$WEBHOOK_URL" \
+                          -H "Content-Type: application/json" \
+                          -d @payload.json > response.json
+
+                        echo "--- Response ---"
+                        cat response.json
+                    '''
+                }
+            }
         }
-      }
     }
-  }
 
-  /* =======================
-   * POST ACTIONS
-   * ======================= */
-  post {
-    success {
-      echo "✅ AI Code Review request sent successfully"
+    post {
+        success {
+            echo "✅ AI Code Review pipeline completed"
+        }
+        failure {
+            echo "❌ AI Code Review pipeline failed"
+        }
     }
-    failure {
-      echo "❌ Pipeline failed"
-    }
-    always {
-      archiveArtifacts artifacts: 'diff.txt, payload.json', onlyIfSuccessful: false
-      cleanWs()
-    }
-  }
 }
+
+
+
+// ========================================
+// import groovy.json.JsonOutput
+
+// pipeline {
+//     agent any
+//     environment {
+//         GIT_CREDENTIAL = 'demo_github'
+//         // DÙNG URL MỚI NHẤT BẠN VỪA TẠO
+//         WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
+//     }
+//     stages {
+//         stage('Checkout') {
+//             steps {
+//                 git(
+//                     url: 'https://github.com/levanhieu98/Fish-sauce.git', 
+//                     branch: 'main', 
+//                     credentialsId: env.GIT_CREDENTIAL
+//                 )
+//             }
+//         }
+//         stage('Collect Diff') {
+//             steps {
+//                 sh 'git fetch origin main && (git diff HEAD~1 HEAD > diff.txt || git show HEAD > diff.txt)'
+//             }
+//         }
+//         stage('Send to Gemini') {
+//             steps {
+//                 script {
+//                     def commitHash = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
+//                     def authorName = sh(script: "git log -1 --pretty=%an", returnStdout: true).trim()
+//                     def diffBase64 = sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim()
+                    
+//                     def payload = [
+//                         repo: "Fish-sauce",
+//                         author: authorName,
+//                         diff_base64: diffBase64
+//                     ]
+                    
+//                     writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
+
+//                    sh """
+//                         echo "--- Đang gửi yêu cầu Review ---"
+//                         curl -s -L -X POST "${env.WEBHOOK_URL}" \
+//                             -H "Content-Type: application/json" \
+//                             -d @payload.json > response.json
+                        
+//                         if grep -q "success" response.json; then
+//                             echo "✅ Đã gửi dữ liệu thành công! Kiểm tra Google Sheet và Google Chat nhé."
+//                         else
+//                             echo "⚠️ Có phản hồi nhưng có thể bị Redirect. Hãy kiểm tra Google Sheet."
+//                         fi
+//                     """
+//                 }
+//             }
+//         }
+//     }
+// }
