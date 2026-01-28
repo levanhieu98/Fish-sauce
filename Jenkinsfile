@@ -1,166 +1,91 @@
 import groovy.json.JsonOutput
 
 pipeline {
-    agent any
+  agent any
 
-    environment {
-        GIT_CREDENTIAL = 'demo_github'
-        BASE_BRANCH = 'origin/main'
-        WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
-        PROJECT_NAME = 'Fish-sauce'
+  parameters {
+    string(name: 'SOURCE_BRANCH', description: 'Branch cần review (ví dụ: review_code)')
+    string(name: 'TARGET_BRANCH', defaultValue: 'main', description: 'Base branch')
+    string(name: 'PR_ID', defaultValue: 'manual', description: 'ID (optional)')
+  }
+
+  environment {
+    GIT_CREDENTIAL = 'demo_github'
+    PROJECT_NAME   = 'Fish-sauce'
+    WEBHOOK_URL    = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
+    MAX_DIFF_SIZE  = '300000'
+  }
+
+  stages {
+
+    stage('Validate Input') {
+      steps {
+        script {
+          if (!params.SOURCE_BRANCH?.trim()) {
+            error "❌ SOURCE_BRANCH is required"
+          }
+          if (params.SOURCE_BRANCH == params.TARGET_BRANCH) {
+            error "❌ SOURCE_BRANCH must be different from TARGET_BRANCH"
+          }
+        }
+      }
     }
 
-    stages {
+    stage('Checkout Source Branch') {
+      steps {
+        checkout([
+          $class: 'GitSCM',
+          branches: [[name: "refs/heads/${params.SOURCE_BRANCH}"]],
+          userRemoteConfigs: [[
+            url: 'https://github.com/levanhieu98/Fish-sauce.git',
+            credentialsId: env.GIT_CREDENTIAL
+          ]]
+        ])
 
-        stage('Checkout') {
-            steps {
-                git(
-                    url: 'https://github.com/levanhieu98/Fish-sauce.git',
-                    branch: 'main',
-                    credentialsId: env.GIT_CREDENTIAL
-                )
-                sh 'git fetch origin main'
-            }
-        }
-
-        stage('Collect Diff') {
-            steps {
-                sh '''
-                  echo "--- Collecting git diff ---"
-
-                  # Nếu có commit trước → diff bình thường
-                  if git rev-parse HEAD~1 >/dev/null 2>&1; then
-                    git diff HEAD~1 HEAD > diff.txt
-                  else
-                    # Commit đầu tiên
-                    git show HEAD > diff.txt
-                  fi
-
-                  echo "--- Diff preview ---"
-                  head -200 diff.txt
-                '''
-            }
-        }
-
-        stage('Send to Gemini') {
-            steps {
-                script {
-                    def commitHash = sh(
-                        script: "git rev-parse HEAD",
-                        returnStdout: true
-                    ).trim()
-
-                    def authorName = sh(
-                        script: "git log -1 --pretty=%an",
-                        returnStdout: true
-                    ).trim()
-
-                    def diffSize = sh(
-                        script: "wc -c diff.txt | awk '{print \$1}'",
-                        returnStdout: true
-                    ).trim()
-
-                    if (diffSize.toInteger() < 50) {
-                        error "❌ Diff quá nhỏ hoặc rỗng – không gửi AI review"
-                    }
-
-                    // Encode base64 để tránh lỗi ký tự
-                    def diffBase64 = sh(
-                        script: "base64 diff.txt | tr -d '\\n'",
-                        returnStdout: true
-                    ).trim()
-
-                    def payload = [
-                        repo         : PROJECT_NAME, 
-                        project      : PROJECT_NAME,
-                        commit       : commitHash,
-                        author       : authorName,
-                        diff_base64  : diffBase64,
-                        diff_size    : diffSize
-                    ]
-
-                    writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
-
-                    sh '''
-                        echo "--- Sending payload to Gemini ---"
-                        curl -s -L -X POST "$WEBHOOK_URL" \
-                          -H "Content-Type: application/json" \
-                          -d @payload.json > response.json
-
-                        echo "--- Response ---"
-                        cat response.json
-                    '''
-                }
-            }
-        }
+        sh 'git fetch origin'
+      }
     }
 
-    post {
-        success {
-            echo "✅ AI Code Review pipeline completed"
-        }
-        failure {
-            echo "❌ AI Code Review pipeline failed"
-        }
+    stage('Collect Diff') {
+      steps {
+        sh """
+          git fetch origin ${params.TARGET_BRANCH}
+          git diff origin/${params.TARGET_BRANCH}...HEAD > diff.txt
+          wc -c diff.txt
+        """
+      }
     }
+
+    stage('Send to Gemini AI') {
+      steps {
+        script {
+          def diffSize = sh(
+            script: "wc -c diff.txt | awk '{print \$1}'",
+            returnStdout: true
+          ).trim().toInteger()
+
+          if (diffSize < 50) error "❌ Diff quá nhỏ"
+          if (diffSize > env.MAX_DIFF_SIZE.toInteger()) error "❌ Diff quá lớn"
+
+          def payload = [
+            project     : env.PROJECT_NAME,
+            mode        : "MANUAL_BRANCH_REVIEW",
+            pr_number   : params.PR_ID,
+            source      : params.SOURCE_BRANCH,
+            target      : params.TARGET_BRANCH,
+            diff_size   : diffSize,
+            diff_base64 : sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim()
+          ]
+
+          writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
+
+          sh """
+            curl -s -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d @payload.json
+          """
+        }
+      }
+    }
+  }
 }
-
-
-
-// ========================================
-// import groovy.json.JsonOutput
-
-// pipeline {
-//     agent any
-//     environment {
-//         GIT_CREDENTIAL = 'demo_github'
-//         // DÙNG URL MỚI NHẤT BẠN VỪA TẠO
-//         WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
-//     }
-//     stages {
-//         stage('Checkout') {
-//             steps {
-//                 git(
-//                     url: 'https://github.com/levanhieu98/Fish-sauce.git', 
-//                     branch: 'main', 
-//                     credentialsId: env.GIT_CREDENTIAL
-//                 )
-//             }
-//         }
-//         stage('Collect Diff') {
-//             steps {
-//                 sh 'git fetch origin main && (git diff HEAD~1 HEAD > diff.txt || git show HEAD > diff.txt)'
-//             }
-//         }
-//         stage('Send to Gemini') {
-//             steps {
-//                 script {
-//                     def commitHash = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
-//                     def authorName = sh(script: "git log -1 --pretty=%an", returnStdout: true).trim()
-//                     def diffBase64 = sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim()
-                    
-//                     def payload = [
-//                         repo: "Fish-sauce",
-//                         author: authorName,
-//                         diff_base64: diffBase64
-//                     ]
-                    
-//                     writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
-
-//                    sh """
-//                         echo "--- Đang gửi yêu cầu Review ---"
-//                         curl -s -L -X POST "${env.WEBHOOK_URL}" \
-//                             -H "Content-Type: application/json" \
-//                             -d @payload.json > response.json
-                        
-//                         if grep -q "success" response.json; then
-//                             echo "✅ Đã gửi dữ liệu thành công! Kiểm tra Google Sheet và Google Chat nhé."
-//                         else
-//                             echo "⚠️ Có phản hồi nhưng có thể bị Redirect. Hãy kiểm tra Google Sheet."
-//                         fi
-//                     """
-//                 }
-//             }
-//         }
-//     }
-// }
