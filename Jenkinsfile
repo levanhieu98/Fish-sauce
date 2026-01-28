@@ -94,6 +94,7 @@ pipeline {
           ).trim()
 
           def payload = [
+            repo         : PROJECT_NAME, 
             project     : env.PROJECT_NAME,
             mode        : env.CHANGE_ID ? "PR_REVIEW" : "POST_MERGE_REVIEW",
             pr_number   : env.CHANGE_ID ?: "",
