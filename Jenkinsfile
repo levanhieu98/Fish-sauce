@@ -41,18 +41,19 @@ pipeline {
               git diff origin/${env.CHANGE_TARGET}...origin/${env.CHANGE_BRANCH} > diff.txt
             """
 
-          } else {
-            /* ===== PUSH / MERGE MODE ===== */
-            echo "🔍 PUSH / MERGE MODE"
+          } 
+        //   else {
+        //     /* ===== PUSH / MERGE MODE ===== */
+        //     echo "🔍 PUSH / MERGE MODE"
 
-            sh '''
-              if git rev-parse HEAD~1 >/dev/null 2>&1; then
-                git diff HEAD~1 HEAD > diff.txt
-              else
-                git show HEAD > diff.txt
-              fi
-            '''
-          }
+        //     sh '''
+        //       if git rev-parse HEAD~1 >/dev/null 2>&1; then
+        //         git diff HEAD~1 HEAD > diff.txt
+        //       else
+        //         git show HEAD > diff.txt
+        //       fi
+        //     '''
+        //   }
 
           sh 'wc -c diff.txt'
         }
