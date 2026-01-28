@@ -1,114 +1,138 @@
 import groovy.json.JsonOutput
 
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    GIT_CREDENTIAL = 'demo_github'
-    WEBHOOK_URL    = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
-    PROJECT_NAME   = 'Fish-sauce'
-    MAX_DIFF_SIZE  = '300000'
-  }
-
-  options {
-    skipDefaultCheckout()
-  }
-
-  stages {
-
-    /* =========================
-       1. CHECKOUT
-    ========================== */
-    stage('Checkout') {
-      steps {
-        deleteDir()
-        checkout scm
-        sh 'git fetch --all'
-      }
+    environment {
+        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
+        PROJECT_NAME = 'Fish-sauce'
+        BASE_BRANCH  = 'main'
     }
 
-    /* =========================
-       2. COLLECT DIFF (PR ONLY)
-    ========================== */
-    stage('Collect Diff') {
-      when {
-        changeRequest()
-      }
-      steps {
-        script {
-          echo "🔍 PR MODE"
-          echo "PR #${env.CHANGE_ID}: ${env.CHANGE_BRANCH} → ${env.CHANGE_TARGET}"
+    stages {
 
-          sh """
-            git fetch origin ${env.CHANGE_TARGET}
-            git fetch origin ${env.CHANGE_BRANCH}
-            git diff origin/${env.CHANGE_TARGET}...origin/${env.CHANGE_BRANCH} > diff.txt
-          """
-
-          sh 'wc -c diff.txt'
+        /* =========================
+           DEBUG – KIỂM TRA NGỮ CẢNH
+        ========================== */
+        stage('Debug Context') {
+            steps {
+                sh '''
+                  echo "================================"
+                  echo "BRANCH_NAME     = $BRANCH_NAME"
+                  echo "CHANGE_ID       = $CHANGE_ID"
+                  echo "CHANGE_BRANCH   = $CHANGE_BRANCH"
+                  echo "CHANGE_TARGET   = $CHANGE_TARGET"
+                  echo "HEAD commit:"
+                  git log -1 --oneline
+                  echo "================================"
+                '''
+            }
         }
-      }
-    }
 
-    /* =========================
-       3. SEND TO GEMINI (PR ONLY)
-    ========================== */
-    stage('Send to Gemini AI') {
-      when {
-        changeRequest()
-      }
-      steps {
-        script {
+        /* =========================
+           COLLECT DIFF (PR / PUSH)
+        ========================== */
+        stage('Collect Diff') {
+            steps {
+                sh '''
+                  echo "Collecting git diff..."
 
-          def diffSize = sh(
-            script: "wc -c diff.txt | awk '{print \$1}'",
-            returnStdout: true
-          ).trim().toInteger()
+                  if [ -n "$CHANGE_ID" ]; then
+                    echo "🟢 Pull Request detected"
+                    echo "Base branch: $CHANGE_TARGET"
 
-          if (diffSize < 50) {
-            echo "⚠️ Diff quá nhỏ – skip AI review"
-            return
-          }
+                    # 🔥 BẮT BUỘC fetch base branch
+                    git fetch origin $CHANGE_TARGET
 
-          if (diffSize > env.MAX_DIFF_SIZE.toInteger()) {
-            error "❌ Diff quá lớn (${diffSize} bytes)"
-          }
+                    # Diff đúng PR (giống GitHub)
+                    git diff origin/$CHANGE_TARGET...HEAD > diff.txt
+                  else
+                    echo "🟡 Direct push detected"
 
-          def payload = [
-            repo        : env.PROJECT_NAME,
-            project     : env.PROJECT_NAME,
-            mode        : "PR_REVIEW",
-            pr_number   : env.CHANGE_ID,
-            source      : env.CHANGE_BRANCH,
-            target      : env.CHANGE_TARGET,
-            commit      : sh(script: "git rev-parse HEAD", returnStdout: true).trim(),
-            author      : sh(script: "git log -1 --pretty=%an", returnStdout: true).trim(),
-            diff_size   : diffSize,
-            diff_base64 : sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim(),
-            review_rule : "security,performance,clean-code"
-          ]
+                    if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                      git diff HEAD~1 HEAD > diff.txt
+                    else
+                      git show HEAD > diff.txt
+                    fi
+                  fi
 
-          writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
-
-          sh """
-            echo "🚀 Sending diff to Gemini AI..."
-            curl -s -X POST "$WEBHOOK_URL" \
-              -H "Content-Type: application/json" \
-              -d @payload.json > response.json
-          """
-
-          echo "🤖 Gemini AI review sent successfully"
+                  echo "---- Diff preview ----"
+                  head -200 diff.txt
+                '''
+            }
         }
-      }
-    }
-  }
 
-  post {
-    success {
-      echo "✅ CI completed successfully"
+        /* =========================
+           SEND TO GEMINI (AI REVIEW)
+        ========================== */
+        stage('Send to Gemini') {
+            steps {
+                script {
+                    def commitHash = sh(
+                        script: 'git rev-parse HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    def authorName = sh(
+                        script: 'git log -1 --pretty=%an',
+                        returnStdout: true
+                    ).trim()
+
+                    def diffSize = sh(
+                        script: "wc -c diff.txt | awk '{print \$1}'",
+                        returnStdout: true
+                    ).trim()
+
+                    if (diffSize.toInteger() < 50) {
+                        error "❌ Diff quá nhỏ hoặc rỗng – không gửi AI review"
+                    }
+
+                    def diffBase64 = sh(
+                        script: "base64 diff.txt | tr -d '\\n'",
+                        returnStdout: true
+                    ).trim()
+
+                    def payload = [
+                        project       : PROJECT_NAME,
+                        repo          : PROJECT_NAME,
+                        commit        : commitHash,
+                        author        : authorName,
+                        diff_base64   : diffBase64,
+                        diff_size     : diffSize,
+                        is_pr         : env.CHANGE_ID ? true : false,
+                        pr_id         : env.CHANGE_ID ?: '',
+                        pr_branch     : env.CHANGE_BRANCH ?: '',
+                        base_branch   : env.CHANGE_TARGET ?: BASE_BRANCH,
+                        build_number  : env.BUILD_NUMBER,
+                        build_url     : env.BUILD_URL
+                    ]
+
+                    writeFile file: 'payload.json',
+                              text: JsonOutput.toJson(payload)
+
+                    sh '''
+                      echo "---- Sending payload to Gemini ----"
+
+                      curl -s -L -X POST "$WEBHOOK_URL" \
+                        -H "Content-Type: application/json; charset=utf-8" \
+                        --data-binary @payload.json \
+                        > response.json
+
+                      echo "---- Gemini response ----"
+                      cat response.json
+                    '''
+
+                }
+            }
+        }
     }
-    failure {
-      echo "❌ CI failed"
+
+    post {
+        success {
+            echo "✅ AI Code Review pipeline completed successfully"
+        }
+        failure {
+            echo "❌ AI Code Review pipeline failed"
+        }
     }
-  }
 }
