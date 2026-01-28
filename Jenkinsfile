@@ -4,54 +4,77 @@ pipeline {
     agent any
 
     environment {
-        GIT_CREDENTIAL = 'demo_github'
-        BASE_BRANCH = 'origin/main'
-        WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
+        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
         PROJECT_NAME = 'Fish-sauce'
+        BASE_BRANCH  = 'main'
     }
 
     stages {
 
-        stage('Checkout') {
+        /* =========================
+           DEBUG – KIỂM TRA NGỮ CẢNH
+        ========================== */
+        stage('Debug Context') {
             steps {
-                git(
-                    url: 'https://github.com/levanhieu98/Fish-sauce.git',
-                    branch: 'main',
-                    credentialsId: env.GIT_CREDENTIAL
-                )
-                sh 'git fetch origin main'
+                sh '''
+                  echo "================================"
+                  echo "BRANCH_NAME     = $BRANCH_NAME"
+                  echo "CHANGE_ID       = $CHANGE_ID"
+                  echo "CHANGE_BRANCH   = $CHANGE_BRANCH"
+                  echo "CHANGE_TARGET   = $CHANGE_TARGET"
+                  echo "HEAD commit:"
+                  git log -1 --oneline
+                  echo "================================"
+                '''
             }
         }
 
+        /* =========================
+           COLLECT DIFF (PR / PUSH)
+        ========================== */
         stage('Collect Diff') {
             steps {
                 sh '''
-                  echo "--- Collecting git diff ---"
+                  echo "Collecting git diff..."
 
-                  # Nếu có commit trước → diff bình thường
-                  if git rev-parse HEAD~1 >/dev/null 2>&1; then
-                    git diff HEAD~1 HEAD > diff.txt
+                  if [ -n "$CHANGE_ID" ]; then
+                    echo "🟢 Pull Request detected"
+                    echo "Base branch: $CHANGE_TARGET"
+
+                    # 🔥 BẮT BUỘC fetch base branch
+                    git fetch origin $CHANGE_TARGET
+
+                    # Diff đúng PR (giống GitHub)
+                    git diff origin/$CHANGE_TARGET...HEAD > diff.txt
                   else
-                    # Commit đầu tiên
-                    git show HEAD > diff.txt
+                    echo "🟡 Direct push detected"
+
+                    if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                      git diff HEAD~1 HEAD > diff.txt
+                    else
+                      git show HEAD > diff.txt
+                    fi
                   fi
 
-                  echo "--- Diff preview ---"
+                  echo "---- Diff preview ----"
                   head -200 diff.txt
                 '''
             }
         }
 
+        /* =========================
+           SEND TO GEMINI (AI REVIEW)
+        ========================== */
         stage('Send to Gemini') {
             steps {
                 script {
                     def commitHash = sh(
-                        script: "git rev-parse HEAD",
+                        script: 'git rev-parse HEAD',
                         returnStdout: true
                     ).trim()
 
                     def authorName = sh(
-                        script: "git log -1 --pretty=%an",
+                        script: 'git log -1 --pretty=%an',
                         returnStdout: true
                     ).trim()
 
@@ -64,32 +87,41 @@ pipeline {
                         error "❌ Diff quá nhỏ hoặc rỗng – không gửi AI review"
                     }
 
-                    // Encode base64 để tránh lỗi ký tự
                     def diffBase64 = sh(
                         script: "base64 diff.txt | tr -d '\\n'",
                         returnStdout: true
                     ).trim()
 
                     def payload = [
-                        repo         : PROJECT_NAME, 
-                        project      : PROJECT_NAME,
-                        commit       : commitHash,
-                        author       : authorName,
-                        diff_base64  : diffBase64,
-                        diff_size    : diffSize
+                        project       : PROJECT_NAME,
+                        repo          : PROJECT_NAME,
+                        commit        : commitHash,
+                        author        : authorName,
+                        diff_base64   : diffBase64,
+                        diff_size     : diffSize,
+                        is_pr         : env.CHANGE_ID ? true : false,
+                        pr_id         : env.CHANGE_ID ?: '',
+                        pr_branch     : env.CHANGE_BRANCH ?: '',
+                        base_branch   : env.CHANGE_TARGET ?: BASE_BRANCH,
+                        build_number  : env.BUILD_NUMBER,
+                        build_url     : env.BUILD_URL
                     ]
 
-                    writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
+                    writeFile file: 'payload.json',
+                              text: JsonOutput.toJson(payload)
 
                     sh '''
-                        echo "--- Sending payload to Gemini ---"
-                        curl -s -L -X POST "$WEBHOOK_URL" \
-                          -H "Content-Type: application/json" \
-                          -d @payload.json > response.json
+                      echo "---- Sending payload to Gemini ----"
 
-                        echo "--- Response ---"
-                        cat response.json
+                      curl -s -L -X POST "$WEBHOOK_URL" \
+                        -H "Content-Type: application/json; charset=utf-8" \
+                        --data-binary @payload.json \
+                        > response.json
+
+                      echo "---- Gemini response ----"
+                      cat response.json
                     '''
+
                 }
             }
         }
@@ -97,70 +129,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ AI Code Review pipeline completed"
+            echo "✅ AI Code Review pipeline completed successfully"
         }
         failure {
             echo "❌ AI Code Review pipeline failed"
         }
     }
 }
-
-
-
-// ========================================
-// import groovy.json.JsonOutput
-
-// pipeline {
-//     agent any
-//     environment {
-//         GIT_CREDENTIAL = 'demo_github'
-//         // DÙNG URL MỚI NHẤT BẠN VỪA TẠO
-//         WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
-//     }
-//     stages {
-//         stage('Checkout') {
-//             steps {
-//                 git(
-//                     url: 'https://github.com/levanhieu98/Fish-sauce.git', 
-//                     branch: 'main', 
-//                     credentialsId: env.GIT_CREDENTIAL
-//                 )
-//             }
-//         }
-//         stage('Collect Diff') {
-//             steps {
-//                 sh 'git fetch origin main && (git diff HEAD~1 HEAD > diff.txt || git show HEAD > diff.txt)'
-//             }
-//         }
-//         stage('Send to Gemini') {
-//             steps {
-//                 script {
-//                     def commitHash = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
-//                     def authorName = sh(script: "git log -1 --pretty=%an", returnStdout: true).trim()
-//                     def diffBase64 = sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim()
-                    
-//                     def payload = [
-//                         repo: "Fish-sauce",
-//                         author: authorName,
-//                         diff_base64: diffBase64
-//                     ]
-                    
-//                     writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
-
-//                    sh """
-//                         echo "--- Đang gửi yêu cầu Review ---"
-//                         curl -s -L -X POST "${env.WEBHOOK_URL}" \
-//                             -H "Content-Type: application/json" \
-//                             -d @payload.json > response.json
-                        
-//                         if grep -q "success" response.json; then
-//                             echo "✅ Đã gửi dữ liệu thành công! Kiểm tra Google Sheet và Google Chat nhé."
-//                         else
-//                             echo "⚠️ Có phản hồi nhưng có thể bị Redirect. Hãy kiểm tra Google Sheet."
-//                         fi
-//                     """
-//                 }
-//             }
-//         }
-//     }
-// }
