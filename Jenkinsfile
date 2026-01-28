@@ -85,8 +85,8 @@ pipeline {
 
                       // 2. Build payload
                       def payload = [
-                          project      : PROJECT_NAME,
-                          repo         : PROJECT_NAME,
+                          project      : env.JOB_NAME,
+                          repo         : env.JOB_NAME,
                           commit       : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
                           author       : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
                           diff_base64  : sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim(),
