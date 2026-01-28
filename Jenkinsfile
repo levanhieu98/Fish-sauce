@@ -4,7 +4,7 @@ pipeline {
     agent any
 
     environment {
-        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbxjJyf0bdpxlPcSRl8FyW55dqOSbSdEiNYx46EwwXwNOlKZHmsPBHyXW4C7HvEM13yZ/exec'
+        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycby_GMrTUo2vCpRv3mzRfnW3CUsYhbQTf9p5jkRZqrG2VZpdodYsPWmn9r4NLZyW6I51/exec'
         PROJECT_NAME = 'Fish-sauce'
         BASE_BRANCH  = 'main'
     }
@@ -85,8 +85,8 @@ pipeline {
 
                       // 2. Build payload
                       def payload = [
-                          project      : env.JOB_NAME,
-                          repo         : env.JOB_NAME,
+                          project      : PROJECT_NAME,
+                          repo         : PROJECT_NAME,
                           commit       : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
                           author       : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
                           diff_base64  : sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim(),
@@ -99,21 +99,16 @@ pipeline {
                       ]
 
                       // 3. Ghi file JSON (pretty để debug)
-                      writeFile(
-                          file: 'payload.json',
-                          text: JsonOutput.prettyPrint(JsonOutput.toJson(payload))
-                      )
+                      writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
                       // 4. Debug + gửi webhook
                       sh '''
-                        echo "===== PAYLOAD.JSON ====="
-                        cat payload.json
-                        echo "========================"
+                          echo "--- Sending payload to Gemini ---"
+                          curl -s -L -X POST "$WEBHOOK_URL" \
+                            -H "Content-Type: application/json" \
+                            -d @payload.json > response.json
 
-                        curl -L -X POST "$WEBHOOK_URL" \
-                          -H "Content-Type: application/json" \
-                          --fail \
-                          --data @payload.json
+                          echo "--- Response ---"
                       '''
                   }
               }
