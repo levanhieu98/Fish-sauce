@@ -126,7 +126,6 @@ pipeline {
               -d @payload.json > response.json
 
             echo "🤖 Gemini response:"
-            cat response.json
           '''
         }
       }
