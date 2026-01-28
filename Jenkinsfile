@@ -3,25 +3,54 @@ import groovy.json.JsonOutput
 pipeline {
   agent any
 
+  options {
+    timestamps()
+    ansiColor('xterm')
+    disableConcurrentBuilds()
+    timeout(time: 15, unit: 'MINUTES')
+  }
+
   parameters {
-    string(name: 'SOURCE_BRANCH', description: 'Branch cần review (ví dụ: review_code)')
-    string(name: 'TARGET_BRANCH', defaultValue: 'main', description: 'Base branch')
-    string(name: 'PR_ID', defaultValue: 'manual', description: 'ID (optional)')
+    string(
+      name: 'SOURCE_BRANCH',
+      trim: true,
+      description: 'Branch cần review (vd: feature/login)'
+    )
+    string(
+      name: 'TARGET_BRANCH',
+      defaultValue: 'main',
+      trim: true,
+      description: 'Base branch để so sánh'
+    )
+    string(
+      name: 'PR_ID',
+      defaultValue: 'manual',
+      trim: true,
+      description: 'PR ID (optional)'
+    )
   }
 
   environment {
     GIT_CREDENTIAL = 'demo_github'
-    PROJECT_NAME   = 'Fish-sauce'
-    WEBHOOK_URL    = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
-    MAX_DIFF_SIZE  = '300000'
+    GIT_REPO_URL   = 'https://github.com/levanhieu98/Fish-sauce.git'
+
+    PROJECT_NAME  = 'Fish-sauce'
+    REVIEW_MODE   = 'MANUAL_BRANCH_REVIEW'
+
+    WEBHOOK_URL   = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
+
+    MAX_DIFF_SIZE = '300000' // bytes
   }
 
   stages {
 
+    /* =======================
+     * 1. VALIDATE INPUT
+     * ======================= */
     stage('Validate Input') {
       steps {
         script {
-          if (!params.SOURCE_BRANCH?.trim()) {
+          if (!params.SOURCE_BRANCH) {
             error "❌ SOURCE_BRANCH is required"
           }
           if (params.SOURCE_BRANCH == params.TARGET_BRANCH) {
@@ -31,32 +60,44 @@ pipeline {
       }
     }
 
+    /* =======================
+     * 2. CHECKOUT SOURCE
+     * ======================= */
     stage('Checkout Source Branch') {
       steps {
         checkout([
           $class: 'GitSCM',
           branches: [[name: "refs/heads/${params.SOURCE_BRANCH}"]],
           userRemoteConfigs: [[
-            url: 'https://github.com/levanhieu98/Fish-sauce.git',
+            url: env.GIT_REPO_URL,
             credentialsId: env.GIT_CREDENTIAL
-          ]]
+          ]],
+          extensions: [
+            [$class: 'CleanBeforeCheckout'],
+            [$class: 'CloneOption', noTags: true, shallow: false]
+          ]
         ])
-
-        sh 'git fetch origin'
       }
     }
 
+    /* =======================
+     * 3. COLLECT DIFF
+     * ======================= */
     stage('Collect Diff') {
       steps {
         sh """
+          set -e
           git fetch origin ${params.TARGET_BRANCH}
-          git diff origin/${params.TARGET_BRANCH}...HEAD > diff.txt
+          git diff origin/${params.TARGET_BRANCH}..HEAD > diff.txt
           wc -c diff.txt
         """
       }
     }
 
-    stage('Send to Gemini AI') {
+    /* =======================
+     * 4. VALIDATE DIFF
+     * ======================= */
+    stage('Validate Diff') {
       steps {
         script {
           def diffSize = sh(
@@ -64,28 +105,76 @@ pipeline {
             returnStdout: true
           ).trim().toInteger()
 
-          if (diffSize < 50) error "❌ Diff quá nhỏ"
-          if (diffSize > env.MAX_DIFF_SIZE.toInteger()) error "❌ Diff quá lớn"
+          echo "📦 Diff size: ${diffSize} bytes"
+
+          if (diffSize < 50) {
+            error "❌ Diff quá nhỏ – không đủ dữ liệu review"
+          }
+
+          if (diffSize > env.MAX_DIFF_SIZE.toInteger()) {
+            error "❌ Diff quá lớn – vượt giới hạn ${env.MAX_DIFF_SIZE} bytes"
+          }
+
+          env.DIFF_SIZE = diffSize.toString()
+        }
+      }
+    }
+
+    /* =======================
+     * 5. SEND TO GEMINI (GAS)
+     * ======================= */
+    stage('Send to Gemini AI') {
+      steps {
+        script {
+
+          sh "command -v base64 >/dev/null"
+
+          def diffBase64 = sh(
+            script: "cat diff.txt | base64 | tr -d '\\n'",
+            returnStdout: true
+          ).trim()
 
           def payload = [
             project     : env.PROJECT_NAME,
-            mode        : "MANUAL_BRANCH_REVIEW",
+            mode        : env.REVIEW_MODE,
             pr_number   : params.PR_ID,
             source      : params.SOURCE_BRANCH,
             target      : params.TARGET_BRANCH,
-            diff_size   : diffSize,
-            diff_base64 : sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim()
+            diff_size   : env.DIFF_SIZE,
+            diff_base64 : diffBase64,
+            commit      : sh(script: "git rev-parse HEAD", returnStdout: true).trim(),
+            author      : sh(script: "git log -1 --pretty=format:'%an'", returnStdout: true).trim(),
+            timestamp   : new Date().format("yyyy-MM-dd HH:mm:ss", TimeZone.getTimeZone('Asia/Ho_Chi_Minh'))
           ]
 
-          writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
+          writeFile(
+            file: 'payload.json',
+            text: JsonOutput.prettyPrint(JsonOutput.toJson(payload))
+          )
 
           sh """
-            curl -s -X POST "$WEBHOOK_URL" \
+            curl -s -X POST "${env.WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d @payload.json
+              --data @payload.json
           """
         }
       }
+    }
+  }
+
+  /* =======================
+   * POST ACTIONS
+   * ======================= */
+  post {
+    success {
+      echo "✅ AI Code Review request sent successfully"
+    }
+    failure {
+      echo "❌ Pipeline failed"
+    }
+    always {
+      archiveArtifacts artifacts: 'diff.txt, payload.json', onlyIfSuccessful: false
+      cleanWs()
     }
   }
 }
