@@ -4,7 +4,7 @@ pipeline {
     agent any
 
     environment {
-        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
+        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbxjJyf0bdpxlPcSRl8FyW55dqOSbSdEiNYx46EwwXwNOlKZHmsPBHyXW4C7HvEM13yZ/exec'
         PROJECT_NAME = 'Fish-sauce'
         BASE_BRANCH  = 'main'
     }
@@ -69,60 +69,55 @@ pipeline {
         /* =========================
            SEND TO GEMINI
         ========================== */
-        stage('Send to Gemini') {
-            steps {
-                script {
-                    def diffSize = sh(
-                        script: "wc -c diff.txt | awk '{print \$1}'",
-                        returnStdout: true
-                    ).trim()
+          stage('Send to Gemini') {
+              steps {
+                  script {
+                      // 1. Tính size diff
+                      def diffSize = sh(
+                          script: "wc -c diff.txt | awk '{print \$1}'",
+                          returnStdout: true
+                      ).trim()
 
-                    if (diffSize.toInteger() < 50) {
-                        echo "⏭️ Diff too small – skip"
-                        return
-                    }
+                      if (diffSize.toInteger() < 50) {
+                          echo "⏭️ Diff too small – skip Gemini review"
+                          return
+                      }
 
-                    def payload = [
-                        project      : PROJECT_NAME,
-                        repo         : PROJECT_NAME,
-                        commit       : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
-                        author       : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
-                        diff_base64  : sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim(),
-                        diff_size    : diffSize,
-                        pr_id        : env.CHANGE_ID,
-                        pr_branch    : env.CHANGE_BRANCH,
-                        base_branch  : env.CHANGE_TARGET,
-                        build_number : env.BUILD_NUMBER,
-                        build_url    : env.BUILD_URL
-                    ]
+                      // 2. Build payload
+                      def payload = [
+                          project      : env.JOB_NAME,
+                          repo         : env.JOB_NAME,
+                          commit       : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
+                          author       : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
+                          diff_base64  : sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim(),
+                          diff_size    : diffSize.toInteger(),
+                          pr_id        : env.CHANGE_ID ?: "",
+                          pr_branch    : env.CHANGE_BRANCH ?: "",
+                          base_branch  : env.CHANGE_TARGET ?: "",
+                          build_number : env.BUILD_NUMBER,
+                          build_url    : env.BUILD_URL
+                      ]
 
-                    // writeFile file: 'payload.json',
-                    //           text: JsonOutput.toJson(payload)
-
-                    // sh '''
-                    //   curl -s -L -X POST "$WEBHOOK_URL" \
-                    //     -H "Content-Type: application/json" \
-                    //     --data-binary @payload.json
-                    // '''
-
-                    writeFile file: 'payload.json',
-                text: groovy.json.JsonOutput.prettyPrint(
-                        groovy.json.JsonOutput.toJson(payload)
+                      // 3. Ghi file JSON (pretty để debug)
+                      writeFile(
+                          file: 'payload.json',
+                          text: JsonOutput.prettyPrint(JsonOutput.toJson(payload))
                       )
 
-      sh '''
-        echo "===== PAYLOAD ====="
-        cat payload.json
-        echo "==================="
+                      // 4. Debug + gửi webhook
+                      sh '''
+                        echo "===== PAYLOAD.JSON ====="
+                        cat payload.json
+                        echo "========================"
 
-        curl -L -X POST "$WEBHOOK_URL" \
-        -H "Content-Type: application/json" \
-        --fail \
-        --data @payload.json
-      '''
-                }
-            }
-        }
+                        curl -L -X POST "$WEBHOOK_URL" \
+                          -H "Content-Type: application/json" \
+                          --fail \
+                          --data @payload.json
+                      '''
+                  }
+              }
+          }
     }
 
     post {
