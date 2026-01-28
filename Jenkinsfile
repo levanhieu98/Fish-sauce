@@ -115,10 +115,10 @@ pipeline {
         cat payload.json
         echo "==================="
 
-        curl -X POST "$WEBHOOK_URL" \
-          -H "Content-Type: application/json" \
-          --fail \
-          --data @payload.json
+        curl -L -X POST "$WEBHOOK_URL" \
+        -H "Content-Type: application/json" \
+        --fail \
+        --data @payload.json
       '''
                 }
             }
