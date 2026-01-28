@@ -108,17 +108,20 @@ pipeline {
                     ]
 
                     writeFile file: 'payload.json',
-                              text: JsonOutput.prettyPrint(JsonOutput.toJson(payload))
+                              text: JsonOutput.toJson(payload)
 
                     sh '''
                       echo "---- Sending payload to Gemini ----"
+
                       curl -s -L -X POST "$WEBHOOK_URL" \
-                        -H "Content-Type: application/json" \
-                        -d @payload.json > response.json
+                        -H "Content-Type: application/json; charset=utf-8" \
+                        --data-binary @payload.json \
+                        > response.json
 
                       echo "---- Gemini response ----"
                       cat response.json
                     '''
+
                 }
             }
         }
