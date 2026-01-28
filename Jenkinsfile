@@ -44,25 +44,28 @@ pipeline {
            COLLECT DIFF (PR ONLY)
         ========================== */
         stage('Collect Diff') {
-            steps {
-                sh '''
-                  echo "Collecting PR diff..."
+          steps {
+              sh '''
+                echo "Collecting PR diff..."
 
-                  git fetch origin $CHANGE_TARGET
+                BASE_REF="base/${CHANGE_TARGET}"
 
-                  git diff origin/$CHANGE_TARGET...HEAD > diff.txt
+                # Fetch base branch vào local ref riêng
+                git fetch origin ${CHANGE_TARGET}:refs/remotes/${BASE_REF}
 
-                  if [ ! -s diff.txt ]; then
-                    echo "⏭️ No code changes in PR – skip AI review"
-                    exit 0
-                  fi
+                # Diff giống GitHub PR
+                git diff ${BASE_REF}...HEAD > diff.txt
 
-                  echo "---- Diff preview ----"
-                  head -200 diff.txt
-                '''
-            }
-        }
+                if [ ! -s diff.txt ]; then
+                  echo "⏭️ No code changes in PR – skip AI review"
+                  exit 0
+                fi
 
+                echo "---- Diff preview ----"
+                head -200 diff.txt
+              '''
+          }
+      }
         /* =========================
            SEND TO GEMINI
         ========================== */
