@@ -4,67 +4,64 @@ pipeline {
   agent any
 
   /*********************************
-   * 1. INPUT – REVIEWER NHẬP TAY
+   * 1. INPUT – REVIEWER CHỈ CHỌN BASE
    *********************************/
   parameters {
     string(
-      name: 'PR_ID',
-      description: 'Pull Request ID (ví dụ: 123)'
-    )
-    string(
-      name: 'SOURCE_BRANCH',
-      description: 'PR source branch (ví dụ: feature/login)'
-    )
-    string(
       name: 'TARGET_BRANCH',
       defaultValue: 'main',
-      description: 'Base branch (mặc định: main)'
+      description: 'Base branch để so sánh (ví dụ: main, develop)'
+    )
+    booleanParam(
+      name: 'FORCE_REVIEW',
+      defaultValue: false,
+      description: 'Force review ngay cả khi diff nhỏ'
     )
   }
 
   environment {
+    PROJECT_NAME  = 'Fish-sauce'
     GIT_CREDENTIAL = 'demo_github'
-    PROJECT_NAME   = 'Fish-sauce'
-    WEBHOOK_URL    = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
-    MAX_DIFF_SIZE  = '300000'
+    WEBHOOK_URL   = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
+    MAX_DIFF_SIZE = '300000'
   }
 
   stages {
 
     /*********************************
-     * 2. VALIDATE INPUT
+     * 2. CHECKOUT (HEAD = BRANCH ĐANG REVIEW)
      *********************************/
-    stage('Validate PR Input') {
+    stage('Checkout Source Branch') {
       steps {
-        script {
-          if (!params.PR_ID?.trim()) {
-            error "❌ PR_ID is required"
-          }
-          if (!params.SOURCE_BRANCH?.trim()) {
-            error "❌ SOURCE_BRANCH is required"
-          }
-
-          echo "🔍 Manual PR Review"
-          echo "PR #${params.PR_ID}: ${params.SOURCE_BRANCH} → ${params.TARGET_BRANCH}"
-        }
+        checkout scm
+        sh 'git fetch --all --prune'
       }
     }
 
     /*********************************
-     * 3. CHECKOUT SOURCE BRANCH
+     * 3. COLLECT METADATA
      *********************************/
-    stage('Checkout PR Branch') {
+    stage('Collect Context') {
       steps {
-        checkout([
-          $class: 'GitSCM',
-          branches: [[name: "refs/heads/${params.SOURCE_BRANCH}"]],
-          userRemoteConfigs: [[
-            url: 'https://github.com/levanhieu98/Fish-sauce.git',
-            credentialsId: env.GIT_CREDENTIAL
-          ]]
-        ])
+        script {
+          env.SOURCE_BRANCH = sh(
+            script: "git rev-parse --abbrev-ref HEAD",
+            returnStdout: true
+          ).trim()
 
-        sh 'git fetch --all'
+          env.COMMIT_HASH = sh(
+            script: "git rev-parse HEAD",
+            returnStdout: true
+          ).trim()
+
+          env.AUTHOR = sh(
+            script: "git log -1 --pretty=%an",
+            returnStdout: true
+          ).trim()
+
+          echo "🔍 Reviewing branch: ${env.SOURCE_BRANCH}"
+          echo "➡️ Target branch: ${params.TARGET_BRANCH}"
+        }
       }
     }
 
@@ -78,16 +75,15 @@ pipeline {
           git fetch origin ${params.TARGET_BRANCH}
 
           git diff origin/${params.TARGET_BRANCH}...HEAD > diff.txt
-
           wc -c diff.txt
         """
       }
     }
 
     /*********************************
-     * 5. SEND TO AI (GEMINI)
+     * 5. VALIDATE DIFF
      *********************************/
-    stage('Send to Gemini AI') {
+    stage('Validate Diff') {
       steps {
         script {
           def diffSize = sh(
@@ -95,52 +91,54 @@ pipeline {
             returnStdout: true
           ).trim().toInteger()
 
-          if (diffSize < 50) {
-            error "❌ Diff quá nhỏ – không cần review"
+          echo "📦 Diff size: ${diffSize} bytes"
+
+          if (diffSize < 50 && !params.FORCE_REVIEW) {
+            error "❌ Diff quá nhỏ – không cần AI review"
           }
 
           if (diffSize > env.MAX_DIFF_SIZE.toInteger()) {
             error "❌ Diff quá lớn (${diffSize} bytes)"
           }
 
-          def commitHash = sh(
-            script: "git rev-parse HEAD",
-            returnStdout: true
-          ).trim()
+          env.DIFF_SIZE = diffSize.toString()
+        }
+      }
+    }
 
-          def authorName = sh(
-            script: "git log -1 --pretty=%an",
-            returnStdout: true
-          ).trim()
-
+    /*********************************
+     * 6. SEND TO GEMINI AI
+     *********************************/
+    stage('Send to Gemini AI') {
+      steps {
+        script {
           def diffBase64 = sh(
             script: "base64 diff.txt | tr -d '\\n'",
             returnStdout: true
           ).trim()
 
           def payload = [
-            repo         : env.PROJECT_NAME,
-            project      : env.PROJECT_NAME,
-            mode         : "MANUAL_PR_REVIEW",
-            pr_number    : params.PR_ID,
-            source       : params.SOURCE_BRANCH,
-            target       : params.TARGET_BRANCH,
-            commit       : commitHash,
-            author       : authorName,
-            diff_size    : diffSize,
-            diff_base64  : diffBase64,
-            review_rule  : "security,performance,clean-code"
+            repo        : env.PROJECT_NAME,
+            project     : env.PROJECT_NAME,
+            mode        : "MANUAL_BRANCH_REVIEW",
+            source      : env.SOURCE_BRANCH,
+            target      : params.TARGET_BRANCH,
+            commit      : env.COMMIT_HASH,
+            author      : env.AUTHOR,
+            diff_size   : env.DIFF_SIZE,
+            diff_base64 : diffBase64,
+            rules       : "security,performance,clean-code"
           ]
 
           writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
           sh '''
-            echo "🚀 Sending PR diff to Gemini AI..."
+            echo "🚀 Sending diff to Gemini AI..."
             curl -s -X POST "$WEBHOOK_URL" \
               -H "Content-Type: application/json" \
               -d @payload.json > response.json
 
-            echo "🤖 Gemini AI response:"
+            echo "🤖 Gemini AI response received"
           '''
         }
       }
@@ -149,10 +147,10 @@ pipeline {
 
   post {
     success {
-      echo "✅ Manual AI PR Review completed"
+      echo "✅ AI Code Review completed successfully"
     }
     failure {
-      echo "❌ Manual AI PR Review failed"
+      echo "❌ AI Code Review failed"
     }
   }
 }
