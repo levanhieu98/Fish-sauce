@@ -3,101 +3,145 @@ import groovy.json.JsonOutput
 pipeline {
   agent any
 
-  environment {
-    GIT_CREDENTIAL = 'demo_github'
-    WEBHOOK_URL    = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
-    PROJECT_NAME   = 'Fish-sauce'
-    MAX_DIFF_SIZE  = '300000'
+  /*********************************
+   * 1. INPUT – REVIEWER NHẬP TAY
+   *********************************/
+  parameters {
+    string(
+      name: 'PR_ID',
+      description: 'Pull Request ID (ví dụ: 123)'
+    )
+    string(
+      name: 'SOURCE_BRANCH',
+      description: 'PR source branch (ví dụ: feature/login)'
+    )
+    string(
+      name: 'TARGET_BRANCH',
+      defaultValue: 'main',
+      description: 'Base branch (mặc định: main)'
+    )
   }
 
-  options {
-    skipDefaultCheckout()
+  environment {
+    GIT_CREDENTIAL = 'demo_github'
+    PROJECT_NAME   = 'Fish-sauce'
+    WEBHOOK_URL    = 'https://script.google.com/macros/s/AKfycbwKJ4Xh0v02OdTUbS96Ie-cvZno1INGrN8Ex7KtLEWrVm9LfjH1x1F9MO-lvHkeBIrQ/exec'
+    MAX_DIFF_SIZE  = '300000'
   }
 
   stages {
 
-    /* =========================
-       1. CHECKOUT
-    ========================== */
-    stage('Checkout') {
-      steps {
-        deleteDir()
-        checkout scm
-        sh 'git fetch --all'
-      }
-    }
-
-    /* =========================
-       2. COLLECT DIFF (PR ONLY)
-    ========================== */
-    stage('Collect Diff') {
-      when {
-        changeRequest()
-      }
+    /*********************************
+     * 2. VALIDATE INPUT
+     *********************************/
+    stage('Validate PR Input') {
       steps {
         script {
-          echo "🔍 PR MODE"
-          echo "PR #${env.CHANGE_ID}: ${env.CHANGE_BRANCH} → ${env.CHANGE_TARGET}"
+          if (!params.PR_ID?.trim()) {
+            error "❌ PR_ID is required"
+          }
+          if (!params.SOURCE_BRANCH?.trim()) {
+            error "❌ SOURCE_BRANCH is required"
+          }
 
-          sh """
-            git fetch origin ${env.CHANGE_TARGET}
-            git fetch origin ${env.CHANGE_BRANCH}
-            git diff origin/${env.CHANGE_TARGET}...origin/${env.CHANGE_BRANCH} > diff.txt
-          """
-
-          sh 'wc -c diff.txt'
+          echo "🔍 Manual PR Review"
+          echo "PR #${params.PR_ID}: ${params.SOURCE_BRANCH} → ${params.TARGET_BRANCH}"
         }
       }
     }
 
-    /* =========================
-       3. SEND TO GEMINI (PR ONLY)
-    ========================== */
-    stage('Send to Gemini AI') {
-      when {
-        changeRequest()
+    /*********************************
+     * 3. CHECKOUT SOURCE BRANCH
+     *********************************/
+    stage('Checkout PR Branch') {
+      steps {
+        checkout([
+          $class: 'GitSCM',
+          branches: [[name: "refs/heads/${params.SOURCE_BRANCH}"]],
+          userRemoteConfigs: [[
+            url: 'https://github.com/levanhieu98/Fish-sauce.git',
+            credentialsId: env.GIT_CREDENTIAL
+          ]]
+        ])
+
+        sh 'git fetch --all'
       }
+    }
+
+    /*********************************
+     * 4. COLLECT DIFF
+     *********************************/
+    stage('Collect Diff') {
+      steps {
+        sh """
+          echo "📄 Collecting diff..."
+          git fetch origin ${params.TARGET_BRANCH}
+
+          git diff origin/${params.TARGET_BRANCH}...HEAD > diff.txt
+
+          wc -c diff.txt
+        """
+      }
+    }
+
+    /*********************************
+     * 5. SEND TO AI (GEMINI)
+     *********************************/
+    stage('Send to Gemini AI') {
       steps {
         script {
-
           def diffSize = sh(
             script: "wc -c diff.txt | awk '{print \$1}'",
             returnStdout: true
           ).trim().toInteger()
 
           if (diffSize < 50) {
-            echo "⚠️ Diff quá nhỏ – skip AI review"
-            return
+            error "❌ Diff quá nhỏ – không cần review"
           }
 
           if (diffSize > env.MAX_DIFF_SIZE.toInteger()) {
             error "❌ Diff quá lớn (${diffSize} bytes)"
           }
 
+          def commitHash = sh(
+            script: "git rev-parse HEAD",
+            returnStdout: true
+          ).trim()
+
+          def authorName = sh(
+            script: "git log -1 --pretty=%an",
+            returnStdout: true
+          ).trim()
+
+          def diffBase64 = sh(
+            script: "base64 diff.txt | tr -d '\\n'",
+            returnStdout: true
+          ).trim()
+
           def payload = [
-            repo        : env.PROJECT_NAME,
-            project     : env.PROJECT_NAME,
-            mode        : "PR_REVIEW",
-            pr_number   : env.CHANGE_ID,
-            source      : env.CHANGE_BRANCH,
-            target      : env.CHANGE_TARGET,
-            commit      : sh(script: "git rev-parse HEAD", returnStdout: true).trim(),
-            author      : sh(script: "git log -1 --pretty=%an", returnStdout: true).trim(),
-            diff_size   : diffSize,
-            diff_base64 : sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim(),
-            review_rule : "security,performance,clean-code"
+            repo         : env.PROJECT_NAME,
+            project      : env.PROJECT_NAME,
+            mode         : "MANUAL_PR_REVIEW",
+            pr_number    : params.PR_ID,
+            source       : params.SOURCE_BRANCH,
+            target       : params.TARGET_BRANCH,
+            commit       : commitHash,
+            author       : authorName,
+            diff_size    : diffSize,
+            diff_base64  : diffBase64,
+            review_rule  : "security,performance,clean-code"
           ]
 
           writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
-          sh """
-            echo "🚀 Sending diff to Gemini AI..."
+          sh '''
+            echo "🚀 Sending PR diff to Gemini AI..."
             curl -s -X POST "$WEBHOOK_URL" \
               -H "Content-Type: application/json" \
               -d @payload.json > response.json
-          """
 
-          echo "🤖 Gemini AI review sent successfully"
+            echo "🤖 Gemini AI response:"
+          '''
         }
       }
     }
@@ -105,10 +149,10 @@ pipeline {
 
   post {
     success {
-      echo "✅ CI completed successfully"
+      echo "✅ Manual AI PR Review completed"
     }
     failure {
-      echo "❌ CI failed"
+      echo "❌ Manual AI PR Review failed"
     }
   }
 }
