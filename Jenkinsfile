@@ -5,7 +5,7 @@ pipeline {
 
     environment {
         // 👉 NÊN cấu hình trong Jenkins Credentials
-        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbw_M61-KxU-BslzQiP8yESizqNW_PXVg75cCREuoO3JbdhKEUPXTIuIqbrCBMwK5IlO/exec'
+        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbzieOGIe-Yuv3qZ-qYrRSR14ij1M7Q7eCTH_ejCwGjpgQPYTcnOxAqonR133EjvbBNj/exec'
 
         PROJECT_NAME = 'Fish-sauce'
         BASE_BRANCH  = 'main'
@@ -155,7 +155,6 @@ pipeline {
                         > testcases.json || true
 
                     echo "Generated test cases:"
-                    cat testcases.json || echo "No test cases generated."
                     '''
                 }
             }
