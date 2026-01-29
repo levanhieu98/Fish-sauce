@@ -52,20 +52,20 @@ pipeline {
         stage('Collect Diff') {
             steps {
                 sh '''
-                  echo "🔍 Collecting PR diff..."
+                echo "🔍 Collecting PR diff..."
 
-                  # Fetch base branch
-                  git fetch origin ${CHANGE_TARGET}
+                # Fetch base branch into local ref
+                git fetch origin ${CHANGE_TARGET}:refs/remotes/origin/${CHANGE_TARGET}
 
-                  # Diff giống GitHub PR
-                  git diff origin/${CHANGE_TARGET}...HEAD > diff.txt
+                # PR diff (same as GitHub)
+                git diff refs/remotes/origin/${CHANGE_TARGET}...HEAD > diff.txt
 
-                  if [ ! -s diff.txt ]; then
+                if [ ! -s diff.txt ]; then
                     echo "NO_DIFF=true" > .env
-                  fi
+                fi
 
-                  echo "Diff size:"
-                  wc -c diff.txt || true
+                echo "Diff size:"
+                wc -c diff.txt || true
                 '''
             }
         }
