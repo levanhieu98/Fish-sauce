@@ -5,7 +5,7 @@ pipeline {
 
     environment {
         // 👉 NÊN cấu hình trong Jenkins Credentials
-        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbyy10pb_-Ci3nZiDeszpljGdN7p_7Yo2jtNJ2LeFGRbOBS2t22J2abTEaXOqFBjTYvJ/exec'
+        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbw_M61-KxU-BslzQiP8yESizqNW_PXVg75cCREuoO3JbdhKEUPXTIuIqbrCBMwK5IlO/exec'
 
         PROJECT_NAME = 'Fish-sauce'
         BASE_BRANCH  = 'main'
@@ -133,6 +133,34 @@ pipeline {
                 }
             }
         }
+
+        /* =========================
+           AI GENERATE TEST CASES
+        ========================== */
+        stage('AI Generate Test Cases') {
+            when {
+                expression { fileExists('response.json') }
+            }
+            steps {
+                script {
+                    sh '''
+                    echo "🧪 Generating Test Cases based on AI Review..."
+
+                    curl --connect-timeout 10 \
+                        --max-time 30 \
+                        --retry 3 \
+                        -s -X POST "$WEBHOOK_URL?mode=testcase" \
+                        -H "Content-Type: application/json" \
+                        -d @payload.json \
+                        > testcases.json || true
+
+                    echo "Generated test cases:"
+                    cat testcases.json || echo "No test cases generated."
+                    '''
+                }
+            }
+        }
+
     }
 
     post {
@@ -141,6 +169,9 @@ pipeline {
         }
         failure {
             echo "❌ Pipeline failed"
+        }
+        always {
+            archiveArtifacts artifacts: 'diff.txt,payload.json,response.json', fingerprint: true
         }
     }
 }
