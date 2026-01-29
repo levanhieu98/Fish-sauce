@@ -1,2 +1,6 @@
-AI review test
-AI review test
+- db.query("SELECT * FROM users WHERE id=" + userId)
++ db.query("SELECT * FROM users WHERE id=?", [userId])
+- return user.name
++ return user.profile.name
+- // get user info
++ // get user information
