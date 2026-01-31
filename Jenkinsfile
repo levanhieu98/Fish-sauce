@@ -5,7 +5,7 @@ pipeline {
 
     environment {
         // 👉 NÊN cấu hình trong Jenkins Credentials
-        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbzIPozwd0-PeohgGDZLhmrgn6WoZxar6QvDwSsYx2MQ1yaNyZFuCb1hdvkShCSUnhap/exec'
+        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbwC2Vrg2yC--vbdbRUAIVMPb5FAE-acCwlhpzn9N4RqZboTOV_F63csvqE6ZOBfSs4/exec'
 
         PROJECT_NAME = 'Fish-sauce'
         BASE_BRANCH  = 'main'
