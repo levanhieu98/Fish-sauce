@@ -5,7 +5,7 @@ pipeline {
 
     environment {
         // 👉 NÊN cấu hình trong Jenkins Credentials
-        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbwGVqp-gxp2kn9W4OQQ87IqmVYdzbMTL9mUMeUDTMZPp1iz0hmCLv5AZryuAgf-hS3X/exec'
+        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbzIPozwd0-PeohgGDZLhmrgn6WoZxar6QvDwSsYx2MQ1yaNyZFuCb1hdvkShCSUnhap/exec'
 
         PROJECT_NAME = 'Fish-sauce'
         BASE_BRANCH  = 'main'
@@ -26,7 +26,7 @@ pipeline {
                     if (!env.CHANGE_ID) {
                         echo "⏭️ Skip: not a Pull Request build"
                         currentBuild.result = 'NOT_BUILT'
-                        error("Not a PR build")
+                        error("⏭️ Not a Pull Request build")
                     }
                 }
             }
@@ -47,130 +47,97 @@ pipeline {
         }
 
         /* =========================
-           COLLECT PR DIFF
+           COLLECT CHANGED FILES
         ========================== */
-        stage('Collect Diff') {
+        stage('Collect Changed Files') {
             steps {
                 sh '''
-                echo "🔍 Collecting PR diff..."
+                  git fetch origin ${CHANGE_TARGET}:refs/remotes/origin/${CHANGE_TARGET}
 
-                # Fetch base branch into local ref
-                git fetch origin ${CHANGE_TARGET}:refs/remotes/origin/${CHANGE_TARGET}
+                  git diff --name-only refs/remotes/origin/${CHANGE_TARGET}...HEAD > files.txt
 
-                # PR diff (same as GitHub)
-                git diff refs/remotes/origin/${CHANGE_TARGET}...HEAD > diff.txt
-
-                if [ ! -s diff.txt ]; then
-                    echo "NO_DIFF=true" > .env
-                fi
-
-                echo "Diff size:"
-                wc -c diff.txt || true
+                  echo "Changed files:"
+                  cat files.txt
                 '''
             }
         }
 
         /* =========================
-           SEND TO GEMINI AI
+           AI REVIEW PER FILE
         ========================== */
-        stage('Send to Gemini') {
+        stage('AI Review Per File') {
             steps {
                 script {
 
-                    // Skip nếu không có diff
-                    if (fileExists('.env')) {
-                        echo "⏭️ No code changes – skip AI review"
-                        return
+                    def files = readFile('files.txt').trim().split('\n')
+
+                    for (filePath in files) {
+
+                        echo "🔍 Reviewing file: ${filePath}"
+
+                        sh """
+                          git diff refs/remotes/origin/${CHANGE_TARGET}...HEAD -- ${filePath} > diff_current.txt
+                        """
+
+                        def diffSize = sh(
+                            script: "wc -c diff_current.txt | awk '{print \$1}'",
+                            returnStdout: true
+                        ).trim().toInteger()
+
+                        if (diffSize < env.MIN_DIFF_SIZE.toInteger()) {
+                            echo "⏭️ Skip ${filePath} (diff too small)"
+                            continue
+                        }
+
+                        if (diffSize > env.MAX_DIFF_SIZE.toInteger()) {
+                            echo "⚠️ Skip ${filePath} (diff too large)"
+                            continue
+                        }
+
+                        def payload = [
+                            project     : env.PROJECT_NAME,
+                            repo        : env.JOB_NAME,
+                            pr_id       : env.CHANGE_ID,
+                            file        : filePath,
+                            author      : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
+                            commit      : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
+                            diff_base64 : sh(script: "base64 diff_current.txt | tr -d '\\n'", returnStdout: true).trim(),
+                            diff_size   : diffSize,
+                            build_url   : env.BUILD_URL
+                        ]
+
+                        writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
+
+                        sh '''
+                          echo "🚀 Sending file diff to AI..."
+                          curl -s -X POST "$WEBHOOK_URL" \
+                               -H "Content-Type: application/json" \
+                               -d @payload.json \
+                               > response.json || true
+                        '''
+
+                        /* =========================
+                           AI GENERATE TEST CASE
+                        ========================== */
+                        sh '''
+                          echo "🧪 Generating test cases..."
+                          curl -s -X POST "$WEBHOOK_URL?mode=testcase" \
+                               -H "Content-Type: application/json" \
+                               -d @payload.json \
+                               > testcase.json || true
+                        '''
                     }
-
-                    // Tính size diff
-                    def diffSize = sh(
-                        script: "wc -c diff.txt | awk '{print \$1}'",
-                        returnStdout: true
-                    ).trim().toInteger()
-
-                    if (diffSize < env.MIN_DIFF_SIZE.toInteger()) {
-                        echo "⏭️ Diff too small – skip AI review"
-                        return
-                    }
-
-                    if (diffSize > env.MAX_DIFF_SIZE.toInteger()) {
-                        echo "⚠️ Diff too large (${diffSize} bytes) – skip AI review"
-                        return
-                    }
-
-                    // Build payload
-                    def payload = [
-                        project      : env.PROJECT_NAME,
-                        repo         : env.JOB_NAME,
-                        commit       : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
-                        author       : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
-                        diff_base64  : sh(script: "base64 diff.txt | tr -d '\\n'", returnStdout: true).trim(),
-                        diff_size    : diffSize,
-                        pr_id        : env.CHANGE_ID,
-                        pr_branch    : env.CHANGE_BRANCH,
-                        base_branch  : env.CHANGE_TARGET,
-                        build_number : env.BUILD_NUMBER,
-                        build_url    : env.BUILD_URL
-                    ]
-
-                    writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
-
-                    // Gửi webhook (hardened)
-                    sh '''
-                      echo "🚀 Sending payload to Gemini AI..."
-                      curl --connect-timeout 10 \
-                           --max-time 30 \
-                           --retry 3 \
-                           --retry-delay 5 \
-                           -s -L -X POST "$WEBHOOK_URL" \
-                           -H "Content-Type: application/json" \
-                           -d @payload.json \
-                           > response.json || true
-
-                      echo "Payload size: $(wc -c payload.json | awk '{print $1}') bytes"
-                    '''
                 }
             }
         }
-
-        /* =========================
-           AI GENERATE TEST CASES
-        ========================== */
-        stage('AI Generate Test Cases') {
-            when {
-                expression { fileExists('response.json') }
-            }
-            steps {
-                script {
-                    sh '''
-                    echo "🧪 Generating Test Cases based on AI Review..."
-
-                    curl --connect-timeout 10 \
-                        --max-time 30 \
-                        --retry 3 \
-                        -s -X POST "$WEBHOOK_URL?mode=testcase" \
-                        -H "Content-Type: application/json" \
-                        -d @payload.json \
-                        > testcases.json || true
-
-                    echo "Generated test cases:"
-                    '''
-                }
-            }
-        }
-
     }
 
     post {
         success {
-            echo "✅ AI Code Review completed"
-        }
-        failure {
-            echo "❌ Pipeline failed"
+            echo "✅ AI Review & Test Case generation completed"
         }
         always {
-            archiveArtifacts artifacts: 'diff.txt,payload.json,response.json', fingerprint: true
+            archiveArtifacts artifacts: '*.txt,*.json', fingerprint: true
         }
     }
 }
