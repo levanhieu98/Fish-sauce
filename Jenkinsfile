@@ -98,6 +98,8 @@ pipeline {
                             project     : env.PROJECT_NAME,
                             repo        : env.JOB_NAME,
                             pr_id       : env.CHANGE_ID,
+                            pr_branch   : env.CHANGE_BRANCH,
+                            base_branch : env.CHANGE_TARGET,
                             file        : filePath,
                             author      : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
                             commit      : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
