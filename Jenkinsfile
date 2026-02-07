@@ -4,7 +4,7 @@ pipeline {
     agent any
 
     environment {
-        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbwqb3q9mleYZ3e5wm39oh9vXtE5rD-PDcWuOnyGwxOPo_PyUZcu8-PooKsJJRQ7fZBf/exec'
+        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbx0tGnwgnVkiPwAsCDpp7UxaBzREFdOBj0Q4vULTrXL8I0FQOQuFcaZIIzeTwtRsEyR/exec'
 
         PROJECT_NAME = 'Event-Laravel'
         BASE_BRANCH  = 'main'          // nhánh để so diff
