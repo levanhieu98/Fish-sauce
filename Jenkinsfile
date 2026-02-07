@@ -75,11 +75,12 @@ pipeline {
         stage('Collect Changed Files') {
             steps {
                 sh '''
-                  source diff_base.env
+                  BASE_COMMIT=$(cat diff_base.env | cut -d= -f2)
 
-                  git diff $BASE_COMMIT HEAD --name-only \
+                    git diff $BASE_COMMIT HEAD --name-only \
                     | grep -E '^(app|routes|database|resources)/' \
                     > files.txt || true
+
 
                   if [ ! -s files.txt ]; then
                     echo "⏭️ No relevant files changed"
@@ -98,7 +99,10 @@ pipeline {
         stage('AI Review Per File') {
             steps {
                 script {
-                    sh 'source diff_base.env'
+                    def baseCommit = sh(
+                        script: "cat diff_base.env | cut -d= -f2",
+                        returnStdout: true
+                    ).trim()
 
                     def baseCommit = sh(
                         script: "grep BASE_COMMIT diff_base.env | cut -d= -f2",
