@@ -152,14 +152,14 @@ pipeline {
 
                         sh '''
                           echo "🚀 AI Code Review"
-                          curl -s -X POST "$WEBHOOK_URL" \
+                          curl -s -L -X POST "$WEBHOOK_URL" \
                                -H "Content-Type: application/json" \
                                -d @payload.json > response.json || true
                         '''
 
                         sh '''
                           echo "🧪 AI Generate Test Cases"
-                          curl -s -X POST "$WEBHOOK_URL?mode=testcase" \
+                          curl -s -L -X POST "$WEBHOOK_URL?mode=testcase" \
                                -H "Content-Type: application/json" \
                                -d @payload.json > testcase.json || true
                         '''
