@@ -4,13 +4,13 @@ pipeline {
     agent any
 
     environment {
-        // 👉 NÊN cấu hình trong Jenkins Credentials
         WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbwqb3q9mleYZ3e5wm39oh9vXtE5rD-PDcWuOnyGwxOPo_PyUZcu8-PooKsJJRQ7fZBf/exec'
 
-        PROJECT_NAME = 'Fish-sauce'
-        BASE_BRANCH  = 'main'
+        PROJECT_NAME = 'Event-Laravel'
+        BASE_BRANCH  = 'main'          // nhánh để so diff
 
-        // Diff size limit (bytes)
+        REVIEW_BRANCH = 'review'  // nhánh trigger review
+
         MIN_DIFF_SIZE = '50'
         MAX_DIFF_SIZE = '400000'
     }
@@ -18,16 +18,23 @@ pipeline {
     stages {
 
         /* =========================
-           GUARD – PR ONLY
+           GUARD – REVIEW BRANCH ONLY
         ========================== */
         stage('Guard') {
             steps {
                 script {
-                    if (!env.CHANGE_ID) {
-                        echo "⏭️ Skip: not a Pull Request build"
+                    def branch = env.BRANCH_NAME ?: sh(
+                        script: 'git rev-parse --abbrev-ref HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    if (branch != env.REVIEW_BRANCH) {
+                        echo "⏭️ Skip: branch ${branch} not for review"
                         currentBuild.result = 'NOT_BUILT'
-                        error("⏭️ Not a Pull Request build")
+                        error("Not review branch")
                     }
+
+                    echo "✅ Review branch detected: ${branch}"
                 }
             }
         }
@@ -38,9 +45,8 @@ pipeline {
         stage('Debug Context') {
             steps {
                 sh '''
-                  echo "PR ID         = $CHANGE_ID"
-                  echo "PR branch     = $CHANGE_BRANCH"
-                  echo "Base branch   = $CHANGE_TARGET"
+                  echo "Review branch = $(git rev-parse --abbrev-ref HEAD)"
+                  echo "Base branch   = ${BASE_BRANCH}"
                   echo "Commit        = $(git rev-parse HEAD)"
                 '''
             }
@@ -52,9 +58,9 @@ pipeline {
         stage('Collect Changed Files') {
             steps {
                 sh '''
-                  git fetch origin ${CHANGE_TARGET}:refs/remotes/origin/${CHANGE_TARGET}
+                  git fetch origin ${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}
 
-                  git diff --name-only refs/remotes/origin/${CHANGE_TARGET}...HEAD > files.txt
+                  git diff --name-only refs/remotes/origin/${BASE_BRANCH}...HEAD > files.txt
 
                   echo "Changed files:"
                   cat files.txt
@@ -68,7 +74,6 @@ pipeline {
         stage('AI Review Per File') {
             steps {
                 script {
-
                     def files = readFile('files.txt').trim().split('\n')
 
                     for (filePath in files) {
@@ -76,7 +81,7 @@ pipeline {
                         echo "🔍 Reviewing file: ${filePath}"
 
                         sh """
-                          git diff refs/remotes/origin/${CHANGE_TARGET}...HEAD -- ${filePath} > diff_current.txt
+                          git diff refs/remotes/origin/${BASE_BRANCH}...HEAD -- ${filePath} > diff_current.txt
                         """
 
                         def diffSize = sh(
@@ -97,9 +102,8 @@ pipeline {
                         def payload = [
                             project     : env.PROJECT_NAME,
                             repo        : env.JOB_NAME,
-                            pr_id       : env.CHANGE_ID,
-                            pr_branch   : env.CHANGE_BRANCH,
-                            base_branch : env.CHANGE_TARGET,
+                            review_branch : env.REVIEW_BRANCH,
+                            base_branch : env.BASE_BRANCH,
                             file        : filePath,
                             author      : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
                             commit      : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
@@ -114,19 +118,14 @@ pipeline {
                           echo "🚀 Sending file diff to AI..."
                           curl -s -X POST "$WEBHOOK_URL" \
                                -H "Content-Type: application/json" \
-                               -d @payload.json \
-                               > response.json || true
+                               -d @payload.json > response.json || true
                         '''
 
-                        /* =========================
-                           AI GENERATE TEST CASE
-                        ========================== */
                         sh '''
                           echo "🧪 Generating test cases..."
                           curl -s -X POST "$WEBHOOK_URL?mode=testcase" \
                                -H "Content-Type: application/json" \
-                               -d @payload.json \
-                               > testcase.json || true
+                               -d @payload.json > testcase.json || true
                         '''
                     }
                 }
