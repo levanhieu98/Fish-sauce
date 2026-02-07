@@ -6,10 +6,11 @@ pipeline {
     environment {
         WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbx0tGnwgnVkiPwAsCDpp7UxaBzREFdOBj0Q4vULTrXL8I0FQOQuFcaZIIzeTwtRsEyR/exec'
 
-        PROJECT_NAME = 'Event-Laravel'
-        BASE_BRANCH  = 'main'          // nhánh để so diff
+        PROJECT_NAME  = 'Event-Laravel'
+        BASE_BRANCH   = 'main'
+        REVIEW_BRANCH = 'review'
 
-        REVIEW_BRANCH = 'review'  // nhánh trigger review
+        REVIEW_SINCE  = '24 hours ago'
 
         MIN_DIFF_SIZE = '50'
         MAX_DIFF_SIZE = '400000'
@@ -45,10 +46,34 @@ pipeline {
         stage('Debug Context') {
             steps {
                 sh '''
+                  echo "Project       = ${PROJECT_NAME}"
                   echo "Review branch = $(git rev-parse --abbrev-ref HEAD)"
                   echo "Base branch   = ${BASE_BRANCH}"
-                  echo "Commit        = $(git rev-parse HEAD)"
+                  echo "HEAD commit   = $(git rev-parse HEAD)"
                 '''
+            }
+        }
+
+        /* =========================
+           COLLECT COMMITS (24H)
+        ========================== */
+        stage('Collect Commits (Last 24h)') {
+            steps {
+                script {
+                    sh '''
+                      git fetch origin ${BASE_BRANCH}
+
+                      git rev-list --since="${REVIEW_SINCE}" HEAD > commits.txt
+
+                      if [ ! -s commits.txt ]; then
+                        echo "⏭️ No commits in last 24h"
+                        exit 0
+                      fi
+
+                      echo "Commits to review:"
+                      cat commits.txt
+                    '''
+                }
             }
         }
 
@@ -57,14 +82,23 @@ pipeline {
         ========================== */
         stage('Collect Changed Files') {
             steps {
-                sh '''
-                  git fetch origin ${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}
+                script {
+                    sh '''
+                      COMMITS=$(cat commits.txt | tr '\n' ' ')
 
-                  git diff --name-only refs/remotes/origin/${BASE_BRANCH}...HEAD > files.txt
+                      git diff origin/${BASE_BRANCH} $COMMITS --name-only \
+                        | grep -E '^(app|routes|database|resources)/' \
+                        > files.txt || true
 
-                  echo "Changed files:"
-                  cat files.txt
-                '''
+                      if [ ! -s files.txt ]; then
+                        echo "⏭️ No relevant files changed"
+                        exit 0
+                      fi
+
+                      echo "Files to review:"
+                      cat files.txt
+                    '''
+                }
             }
         }
 
@@ -78,10 +112,12 @@ pipeline {
 
                     for (filePath in files) {
 
-                        echo "🔍 Reviewing file: ${filePath}"
+                        echo "🔍 Reviewing ${filePath}"
 
                         sh """
-                          git diff refs/remotes/origin/${BASE_BRANCH}...HEAD -- ${filePath} > diff_current.txt
+                          git diff origin/${BASE_BRANCH} \\
+                            \$(cat commits.txt | tr '\\n' ' ') \\
+                            -- ${filePath} > diff_current.txt
                         """
 
                         def diffSize = sh(
@@ -100,29 +136,29 @@ pipeline {
                         }
 
                         def payload = [
-                            project     : env.PROJECT_NAME,
-                            repo        : env.JOB_NAME,
-                            review_branch : env.REVIEW_BRANCH,
-                            base_branch : env.BASE_BRANCH,
-                            file        : filePath,
-                            author      : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
-                            commit      : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
-                            diff_base64 : sh(script: "base64 diff_current.txt | tr -d '\\n'", returnStdout: true).trim(),
-                            diff_size   : diffSize,
-                            build_url   : env.BUILD_URL
+                            project      : env.PROJECT_NAME,
+                            repo         : env.JOB_NAME,
+                            pr_branch : env.REVIEW_BRANCH,
+                            base_branch  : env.BASE_BRANCH,
+                            file         : filePath,
+                            author       : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
+                            commit       : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
+                            diff_size    : diffSize,
+                            diff_base64  : sh(script: "base64 diff_current.txt | tr -d '\\n'", returnStdout: true).trim(),
+                            build_url    : env.BUILD_URL
                         ]
 
                         writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
                         sh '''
-                          echo "🚀 Sending file diff to AI..."
+                          echo "🚀 AI Code Review"
                           curl -s -X POST "$WEBHOOK_URL" \
                                -H "Content-Type: application/json" \
                                -d @payload.json > response.json || true
                         '''
 
                         sh '''
-                          echo "🧪 Generating test cases..."
+                          echo "🧪 AI Generate Test Cases"
                           curl -s -X POST "$WEBHOOK_URL?mode=testcase" \
                                -H "Content-Type: application/json" \
                                -d @payload.json > testcase.json || true
@@ -135,7 +171,7 @@ pipeline {
 
     post {
         success {
-            echo "✅ AI Review & Test Case generation completed"
+            echo "✅ AI Review completed successfully"
         }
         always {
             archiveArtifacts artifacts: '*.txt,*.json', fingerprint: true
