@@ -3,13 +3,17 @@ import groovy.json.JsonOutput
 pipeline {
     agent any
 
+    options {
+        disableConcurrentBuilds()
+    }
+
     environment {
         WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbx0tGnwgnVkiPwAsCDpp7UxaBzREFdOBj0Q4vULTrXL8I0FQOQuFcaZIIzeTwtRsEyR/exec'
 
         PROJECT_NAME  = 'Event-Laravel'
 
-        BASE_BRANCH   = 'main'      // nhánh gốc để so sánh
-        REVIEW_BRANCH = 'review'    // nhánh được merge vào để review
+        BASE_BRANCH   = 'main'
+        REVIEW_BRANCH = 'review'
 
         MIN_DIFF_SIZE = '50'
         MAX_DIFF_SIZE = '400000'
@@ -23,39 +27,27 @@ pipeline {
         stage('Guard Review Branch') {
             steps {
                 script {
-                    def branch = env.BRANCH_NAME ?: sh(
-                        script: 'git rev-parse --abbrev-ref HEAD',
-                        returnStdout: true
-                    ).trim()
-
-                    if (branch != env.REVIEW_BRANCH) {
-                        echo "⏭️ Skip: ${branch} is not review branch"
+                    if (env.BRANCH_NAME != env.REVIEW_BRANCH) {
+                        echo "⏭️ Skip: ${env.BRANCH_NAME} is not review branch"
                         currentBuild.result = 'NOT_BUILT'
                         error("Not review branch")
                     }
-
-                    echo "✅ Review branch detected: ${branch}"
+                    echo "✅ Review branch detected: ${env.BRANCH_NAME}"
                 }
             }
         }
 
-        /* =========================
-           DEBUG CONTEXT
-        ========================== */
         stage('Debug Context') {
             steps {
                 sh '''
                   echo "Project       = ${PROJECT_NAME}"
-                  echo "Review branch = $(git rev-parse --abbrev-ref HEAD)"
+                  echo "Review branch = ${BRANCH_NAME}"
                   echo "Base branch   = ${BASE_BRANCH}"
                   echo "HEAD commit   = $(git rev-parse HEAD)"
                 '''
             }
         }
 
-        /* =========================
-           CALCULATE DIFF BASE
-        ========================== */
         stage('Calculate Diff Base') {
             steps {
                 sh '''
@@ -69,18 +61,14 @@ pipeline {
             }
         }
 
-        /* =========================
-           COLLECT CHANGED FILES
-        ========================== */
         stage('Collect Changed Files') {
             steps {
                 sh '''
-                  BASE_COMMIT=$(cat diff_base.env | cut -d= -f2)
+                  BASE_COMMIT=$(cut -d= -f2 diff_base.env)
 
-                    git diff $BASE_COMMIT HEAD --name-only \
+                  git diff $BASE_COMMIT HEAD --name-only \
                     | grep -E '^(app|routes|database|resources)/' \
                     > files.txt || true
-
 
                   if [ ! -s files.txt ]; then
                     echo "⏭️ No relevant files changed"
@@ -93,19 +81,16 @@ pipeline {
             }
         }
 
-        /* =========================
-           AI REVIEW PER FILE
-        ========================== */
         stage('AI Review Per File') {
             steps {
                 script {
-                    def baseCommit = sh(
-                        script: "cat diff_base.env | cut -d= -f2",
-                        returnStdout: true
-                    ).trim()
+                    if (!fileExists('files.txt')) {
+                        echo "⏭️ No files to review"
+                        return
+                    }
 
                     def baseCommit = sh(
-                        script: "grep BASE_COMMIT diff_base.env | cut -d= -f2",
+                        script: "cut -d= -f2 diff_base.env",
                         returnStdout: true
                     ).trim()
 
@@ -115,24 +100,15 @@ pipeline {
 
                         echo "🔍 Reviewing ${filePath}"
 
-                        sh """
-                          git diff ${baseCommit} HEAD -- ${filePath} > diff_current.txt
-                        """
+                        sh "git diff ${baseCommit} HEAD -- ${filePath} > diff_current.txt"
 
                         def diffSize = sh(
                             script: "wc -c diff_current.txt | awk '{print \$1}'",
                             returnStdout: true
                         ).trim().toInteger()
 
-                        if (diffSize < env.MIN_DIFF_SIZE.toInteger()) {
-                            echo "⏭️ Skip ${filePath} (diff too small)"
-                            continue
-                        }
-
-                        if (diffSize > env.MAX_DIFF_SIZE.toInteger()) {
-                            echo "⚠️ Skip ${filePath} (diff too large)"
-                            continue
-                        }
+                        if (diffSize < env.MIN_DIFF_SIZE.toInteger()) continue
+                        if (diffSize > env.MAX_DIFF_SIZE.toInteger()) continue
 
                         def payload = [
                             project      : env.PROJECT_NAME,
@@ -151,17 +127,9 @@ pipeline {
                         writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
                         sh '''
-                          echo "🚀 AI Code Review"
                           curl -s -L -X POST "$WEBHOOK_URL" \
-                               -H "Content-Type: application/json" \
-                               -d @payload.json > response.json || true
-                        '''
-
-                        sh '''
-                          echo "🧪 AI Generate Test Cases"
-                          curl -s -L -X POST "$WEBHOOK_URL?mode=testcase" \
-                               -H "Content-Type: application/json" \
-                               -d @payload.json > testcase.json || true
+                            -H "Content-Type: application/json" \
+                            -d @payload.json > response.json || true
                         '''
                     }
                 }
@@ -170,9 +138,6 @@ pipeline {
     }
 
     post {
-        success {
-            echo "✅ AI Review completed successfully"
-        }
         always {
             archiveArtifacts artifacts: '*.txt,*.json,*.env', fingerprint: true
         }
