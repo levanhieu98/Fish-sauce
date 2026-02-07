@@ -7,10 +7,9 @@ pipeline {
         WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbx0tGnwgnVkiPwAsCDpp7UxaBzREFdOBj0Q4vULTrXL8I0FQOQuFcaZIIzeTwtRsEyR/exec'
 
         PROJECT_NAME  = 'Event-Laravel'
-        BASE_BRANCH   = 'main'
-        REVIEW_BRANCH = 'review'
 
-        REVIEW_SINCE  = '24 hours ago'
+        BASE_BRANCH   = 'main'      // nhánh gốc để so sánh
+        REVIEW_BRANCH = 'review'    // nhánh được merge vào để review
 
         MIN_DIFF_SIZE = '50'
         MAX_DIFF_SIZE = '400000'
@@ -21,7 +20,7 @@ pipeline {
         /* =========================
            GUARD – REVIEW BRANCH ONLY
         ========================== */
-        stage('Guard') {
+        stage('Guard Review Branch') {
             steps {
                 script {
                     def branch = env.BRANCH_NAME ?: sh(
@@ -30,7 +29,7 @@ pipeline {
                     ).trim()
 
                     if (branch != env.REVIEW_BRANCH) {
-                        echo "⏭️ Skip: branch ${branch} not for review"
+                        echo "⏭️ Skip: ${branch} is not review branch"
                         currentBuild.result = 'NOT_BUILT'
                         error("Not review branch")
                     }
@@ -55,25 +54,18 @@ pipeline {
         }
 
         /* =========================
-           COLLECT COMMITS (24H)
+           CALCULATE DIFF BASE
         ========================== */
-        stage('Collect Commits (Last 24h)') {
+        stage('Calculate Diff Base') {
             steps {
-                script {
-                    sh '''
-                      git fetch origin ${BASE_BRANCH}
+                sh '''
+                  git fetch origin ${BASE_BRANCH}
 
-                      git rev-list --since="${REVIEW_SINCE}" HEAD > commits.txt
+                  BASE_COMMIT=$(git merge-base origin/${BASE_BRANCH} HEAD)
 
-                      if [ ! -s commits.txt ]; then
-                        echo "⏭️ No commits in last 24h"
-                        exit 0
-                      fi
-
-                      echo "Commits to review:"
-                      cat commits.txt
-                    '''
-                }
+                  echo "BASE_COMMIT=${BASE_COMMIT}" > diff_base.env
+                  echo "Diff from ${BASE_COMMIT} -> HEAD"
+                '''
             }
         }
 
@@ -82,23 +74,21 @@ pipeline {
         ========================== */
         stage('Collect Changed Files') {
             steps {
-                script {
-                    sh '''
-                      COMMITS=$(cat commits.txt | tr '\n' ' ')
+                sh '''
+                  source diff_base.env
 
-                      git diff origin/${BASE_BRANCH} $COMMITS --name-only \
-                        | grep -E '^(app|routes|database|resources)/' \
-                        > files.txt || true
+                  git diff $BASE_COMMIT HEAD --name-only \
+                    | grep -E '^(app|routes|database|resources)/' \
+                    > files.txt || true
 
-                      if [ ! -s files.txt ]; then
-                        echo "⏭️ No relevant files changed"
-                        exit 0
-                      fi
+                  if [ ! -s files.txt ]; then
+                    echo "⏭️ No relevant files changed"
+                    exit 0
+                  fi
 
-                      echo "Files to review:"
-                      cat files.txt
-                    '''
-                }
+                  echo "Files to review:"
+                  cat files.txt
+                '''
             }
         }
 
@@ -108,6 +98,13 @@ pipeline {
         stage('AI Review Per File') {
             steps {
                 script {
+                    sh 'source diff_base.env'
+
+                    def baseCommit = sh(
+                        script: "grep BASE_COMMIT diff_base.env | cut -d= -f2",
+                        returnStdout: true
+                    ).trim()
+
                     def files = readFile('files.txt').trim().split('\n')
 
                     for (filePath in files) {
@@ -115,9 +112,7 @@ pipeline {
                         echo "🔍 Reviewing ${filePath}"
 
                         sh """
-                          git diff origin/${BASE_BRANCH} \\
-                            \$(cat commits.txt | tr '\\n' ' ') \\
-                            -- ${filePath} > diff_current.txt
+                          git diff ${baseCommit} HEAD -- ${filePath} > diff_current.txt
                         """
 
                         def diffSize = sh(
@@ -138,11 +133,12 @@ pipeline {
                         def payload = [
                             project      : env.PROJECT_NAME,
                             repo         : env.JOB_NAME,
-                            pr_branch : env.REVIEW_BRANCH,
+                            pr_branch    : env.REVIEW_BRANCH,
                             base_branch  : env.BASE_BRANCH,
+                            base_commit  : baseCommit,
+                            head_commit  : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
                             file         : filePath,
                             author       : sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim(),
-                            commit       : sh(script: 'git rev-parse HEAD', returnStdout: true).trim(),
                             diff_size    : diffSize,
                             diff_base64  : sh(script: "base64 diff_current.txt | tr -d '\\n'", returnStdout: true).trim(),
                             build_url    : env.BUILD_URL
@@ -174,7 +170,7 @@ pipeline {
             echo "✅ AI Review completed successfully"
         }
         always {
-            archiveArtifacts artifacts: '*.txt,*.json', fingerprint: true
+            archiveArtifacts artifacts: '*.txt,*.json,*.env', fingerprint: true
         }
     }
 }
