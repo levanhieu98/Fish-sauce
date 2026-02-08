@@ -9,7 +9,7 @@ pipeline {
     }
 
     environment {
-        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbw-mTXdS4-gm4Q2AxzoI30ND8qduVmKF1lYN9tTb0-PkqUp4sm_Wow7TmeXyJOl4kW-/exec'
+        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbx0j8Tr2fDos6UvmbKlsK1I0AFNUjMrqrNxWR1vXFZER3Ze5R8P0g7UQh49s6VPXg8/exec'
 
         PROJECT_NAME  = 'Event-Laravel'
         BASE_BRANCH   = 'main'
