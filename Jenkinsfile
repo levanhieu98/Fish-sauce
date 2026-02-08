@@ -9,7 +9,7 @@ pipeline {
     }
 
     environment {
-        WEBHOOK_URL  = 'https://script.google.com/macros/s/AKfycbx0j8Tr2fDos6UvmbKlsK1I0AFNUjMrqrNxWR1vXFZER3Ze5R8P0g7UQh49s6VPXg8/exec'
+        WEBHOOK_URL   = 'https://script.google.com/macros/s/AKfycbyDWZhgGpy_FaAhzvUiP9dTWSooaalOvKNPmDqbBF7C6WkZ2dOP1Q1EAamszGS1bQ2i/exec'
 
         PROJECT_NAME  = 'Event-Laravel'
         BASE_BRANCH   = 'main'
@@ -231,7 +231,7 @@ pipeline {
                         sh '''
                           echo "🚀 AI Code Review"
                           for i in 1 2 3; do
-                            curl -s -X POST "$WEBHOOK_URL" \
+                            curl -s -L -X POST "$WEBHOOK_URL" \
                               -H "Content-Type: application/json" \
                               -d @payload.json && break
                             sleep 2
@@ -242,7 +242,7 @@ pipeline {
                         sh '''
                           echo "🧪 AI Generate Test Cases"
                           for i in 1 2 3; do
-                            curl -s -X POST "$WEBHOOK_URL?mode=testcase" \
+                            curl -s -L -X POST "$WEBHOOK_URL?mode=testcase" \
                               -H "Content-Type: application/json" \
                               -d @payload.json && break
                             sleep 2
