@@ -240,7 +240,7 @@ pipeline {
                         sh '''
                           echo "🚀 AI Code Review"
                           for i in 1 2 3; do
-                            curl -s -X POST "$WEBHOOK_URL" \
+                            curl -s -L -X POST "$WEBHOOK_URL" \
                               -H "Content-Type: application/json" \
                               -d @payload.json && break
                             sleep 2
@@ -250,7 +250,7 @@ pipeline {
                         sh '''
                           echo "🧪 AI Generate Test Cases"
                           for i in 1 2 3; do
-                            curl -s -X POST "$WEBHOOK_URL?mode=testcase" \
+                            curl -s -L -X POST "$WEBHOOK_URL?mode=testcase" \
                               -H "Content-Type: application/json" \
                               -d @payload.json && break
                             sleep 2
