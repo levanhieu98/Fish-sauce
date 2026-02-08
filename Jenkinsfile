@@ -5,18 +5,19 @@ pipeline {
 
     options {
         disableConcurrentBuilds()
-        timeout(time: 10, unit: 'MINUTES')
+        timeout(time: 15, unit: 'MINUTES')
+        timestamps()
     }
 
     environment {
-        WEBHOOK_URL   = 'https://script.google.com/macros/s/AKfycbyDWZhgGpy_FaAhzvUiP9dTWSooaalOvKNPmDqbBF7C6WkZ2dOP1Q1EAamszGS1bQ2i/exec'
+        WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbzG7QmnM-fncjbSbwy7J--W1E8V3eOpnciVY5HH81pv_hFZ4dcx37I3aekEIBufenrX/exec'
 
         PROJECT_NAME  = 'Event-Laravel'
         BASE_BRANCH   = 'main'
         REVIEW_BRANCH = 'review'
 
         MIN_DIFF_SIZE = '50'
-        MAX_DIFF_SIZE = '400000'
+        MAX_DIFF_SIZE = '30000'
     }
 
     stages {
@@ -33,8 +34,8 @@ pipeline {
                     ).trim()
 
                     if (branch != env.REVIEW_BRANCH) {
-                        echo "⏭️ Skip: branch ${branch} not for review"
-                        return
+                        currentBuild.result = 'NOT_BUILT'
+                        error("⏭️ Skip build: branch ${branch} is not ${env.REVIEW_BRANCH}")
                     }
 
                     echo "✅ Review branch detected: ${branch}"
@@ -58,6 +59,7 @@ pipeline {
 
         /* =========================
            CALCULATE MERGE BASE
+           (HTTPS + USER/PASS)
         ========================== */
         stage('Calculate Merge Base') {
             steps {
@@ -71,7 +73,7 @@ pipeline {
                     sh '''
                       git fetch https://${GIT_USER}:${GIT_PASS}@github.com/levanhieu98/Fish-sauce.git ${BASE_BRANCH}
 
-                      BASE_COMMIT=$(git merge-base origin/${BASE_BRANCH} HEAD)
+                      BASE_COMMIT=$(git merge-base FETCH_HEAD HEAD)
 
                       if [ -z "$BASE_COMMIT" ]; then
                         echo "❌ Cannot calculate merge-base"
@@ -93,17 +95,17 @@ pipeline {
                 sh '''
                   BASE_COMMIT=$(cut -d= -f2 diff_base.env)
 
-                  git diff ${BASE_COMMIT} HEAD --name-only \
-                    | grep -E '^(app|routes|database|resources)/' \
-                    > files.txt || true
+                  git diff --name-status ${BASE_COMMIT} HEAD \
+                    | grep -E '^(A|M|R|D)\s+(app|routes|database|resources)/' \
+                    > files_status.txt || true
 
-                  if [ ! -s files.txt ]; then
+                  if [ ! -s files_status.txt ]; then
                     echo "⏭️ No relevant files changed"
                     exit 0
                   fi
 
                   echo "Files to review:"
-                  cat files.txt
+                  cat files_status.txt
                 '''
             }
         }
@@ -114,10 +116,8 @@ pipeline {
         stage('AI Review Per File') {
             steps {
                 script {
-                    if (!fileExists('files.txt')) return
 
-                    def raw = readFile('files.txt').trim()
-                    if (!raw) return
+                    if (!fileExists('files_status.txt')) return
 
                     def baseCommit = sh(
                         script: "cut -d= -f2 diff_base.env",
@@ -129,14 +129,26 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    def files = raw.split('\n')
+                    def lines = readFile('files_status.txt').trim().split('\n')
 
-                    for (filePath in files) {
+                    for (line in lines) {
 
-                        echo "🔍 Reviewing ${filePath}"
+                        def parts = line.tokenize()
+                        def changeTypeCode = parts[0]
+                        def filePath = parts[-1]
+
+                        echo "🔍 Reviewing ${filePath} (${changeTypeCode})"
+
+                        def changeType = [
+                            'A': 'add',
+                            'M': 'modify',
+                            'D': 'delete',
+                            'R': 'rename'
+                        ][changeTypeCode] ?: 'modify'
 
                         sh """
-                          git diff ${baseCommit}..${headCommit} -- ${filePath} > diff_current.txt
+                          git diff ${baseCommit}..${headCommit} -- ${filePath} \
+                            | head -c ${MAX_DIFF_SIZE} > diff_current.txt
                         """
 
                         def diffSize = sh(
@@ -145,17 +157,19 @@ pipeline {
                         ).trim().toInteger()
 
                         if (diffSize < env.MIN_DIFF_SIZE.toInteger()) continue
-                        if (diffSize > env.MAX_DIFF_SIZE.toInteger()) continue
 
-                        /* ---------- Detect file type ---------- */
                         def fileType = "other"
                         if (filePath.contains("/Controllers/")) fileType = "controller"
                         else if (filePath.contains("/Models/")) fileType = "model"
                         else if (filePath.contains("/Services/")) fileType = "service"
                         else if (filePath.contains("/Requests/")) fileType = "request"
+                        else if (filePath.contains("/Jobs/")) fileType = "job"
+                        else if (filePath.contains("/Policies/")) fileType = "policy"
+                        else if (filePath.contains("/Observers/")) fileType = "observer"
+                        else if (filePath.contains("/Events/")) fileType = "event"
+                        else if (filePath.contains("/Listeners/")) fileType = "listener"
                         else if (filePath.contains("/Migrations/")) fileType = "migration"
 
-                        /* ---------- Authors ---------- */
                         def authorsRaw = sh(
                             script: """
                               git log ${baseCommit}..${headCommit} -- ${filePath} --pretty=%an | sort | uniq
@@ -165,24 +179,22 @@ pipeline {
 
                         def authors = authorsRaw ? authorsRaw.split('\n') : []
 
-                        /* ---------- Diff hash ---------- */
                         def diffHash = sh(
                             script: "sha256sum diff_current.txt | awk '{print \$1}'",
                             returnStdout: true
                         ).trim()
 
-                        /* =========================
-                           PAYLOAD (STANDARDIZED)
-                        ========================== */
+                        def reviewId = "${env.BUILD_TAG}-${diffHash.take(8)}"
+
                         def payload = [
                             meta: [
+                                review_id : reviewId,
                                 project   : env.PROJECT_NAME,
                                 repo      : env.JOB_NAME,
                                 build_id  : "${env.JOB_NAME}#${env.BUILD_NUMBER}",
                                 build_url : env.BUILD_URL,
                                 timestamp : new Date().format("yyyy-MM-dd'T'HH:mm:ss'Z'")
                             ],
-
                             context: [
                                 language     : "php",
                                 framework    : "laravel",
@@ -192,11 +204,10 @@ pipeline {
                                 base_branch  : env.BASE_BRANCH,
                                 review_branch: env.REVIEW_BRANCH
                             ],
-
                             changeset: [
-                                file         : filePath,
+                                file        : filePath,
                                 file_type   : fileType,
-                                change_type : "modify",
+                                change_type : changeType,
                                 authors     : authors,
                                 base_commit : baseCommit,
                                 head_commit : headCommit,
@@ -210,7 +221,6 @@ pipeline {
                                     ).trim()
                                 ]
                             ],
-
                             intent: [
                                 review_type   : "code_review",
                                 focus         : [
@@ -227,7 +237,6 @@ pipeline {
 
                         writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
-                        /* ---------- AI Code Review ---------- */
                         sh '''
                           echo "🚀 AI Code Review"
                           for i in 1 2 3; do
@@ -238,7 +247,6 @@ pipeline {
                           done
                         '''
 
-                        /* ---------- AI Test Case ---------- */
                         sh '''
                           echo "🧪 AI Generate Test Cases"
                           for i in 1 2 3; do
@@ -256,7 +264,7 @@ pipeline {
 
     post {
         success {
-            echo "✅ AI Review (merge-base + standardized payload) completed"
+            echo "✅ AI Code Review completed successfully"
         }
         always {
             archiveArtifacts artifacts: '*.txt,*.json,*.env', fingerprint: true
