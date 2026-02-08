@@ -96,7 +96,7 @@ pipeline {
                   BASE_COMMIT=$(cut -d= -f2 diff_base.env)
 
                   git diff --name-status ${BASE_COMMIT} HEAD \
-                    | grep -E '^(A|M|R|D)\s+(app|routes|database|resources)/' \
+                    | grep -E '^(A|M|R|D)[[:space:]]+(app|routes|database|resources)/' \
                     > files_status.txt || true
 
                   if [ ! -s files_status.txt ]; then
