@@ -22,6 +22,9 @@ pipeline {
 
     stages {
 
+        /* ===============================
+           GUARD BRANCH
+        =============================== */
         stage('Guard Review Branch') {
             steps {
                 script {
@@ -35,7 +38,7 @@ pipeline {
                         error("Skip build: branch ${branch} is not ${env.REVIEW_BRANCH}")
                     }
 
-                    echo "Review branch detected: ${branch}"
+                    echo "✔ Review branch detected: ${branch}"
                 }
             }
         }
@@ -51,6 +54,9 @@ pipeline {
             }
         }
 
+        /* ===============================
+           CALCULATE MERGE BASE
+        =============================== */
         stage('Calculate Merge Base') {
             steps {
                 withCredentials([
@@ -66,7 +72,7 @@ pipeline {
                       BASE_COMMIT=$(git merge-base FETCH_HEAD HEAD)
 
                       if [ -z "$BASE_COMMIT" ]; then
-                        echo "Cannot calculate merge-base"
+                        echo "❌ Cannot calculate merge-base"
                         exit 1
                       fi
 
@@ -77,6 +83,9 @@ pipeline {
             }
         }
 
+        /* ===============================
+           COLLECT FILES
+        =============================== */
         stage('Collect Changed Files') {
             steps {
                 sh '''
@@ -87,20 +96,24 @@ pipeline {
                     > files_status.txt || true
 
                   if [ ! -s files_status.txt ]; then
+                    echo "NO_CHANGES=true" > no_changes.env
                     echo "No relevant files changed"
-                    exit 0
                   fi
 
-                  cat files_status.txt
+                  cat files_status.txt || true
                 '''
             }
         }
 
+        /* ===============================
+           AI REVIEW PER FILE
+        =============================== */
         stage('AI Review Per File') {
+            when {
+                expression { !fileExists('no_changes.env') }
+            }
             steps {
                 script {
-
-                    if (!fileExists('files_status.txt')) return
 
                     def baseCommit = sh(
                         script: "cut -d= -f2 diff_base.env",
@@ -118,9 +131,9 @@ pipeline {
 
                         def parts = line.tokenize()
                         def changeTypeCode = parts[0]
-                        def filePath = parts[-1]
 
-                        echo "Reviewing ${filePath}"
+                        def oldPath = parts.size() > 2 ? parts[1] : null
+                        def filePath = parts.size() > 2 ? parts[2] : parts[1]
 
                         def changeType = [
                             'A': 'add',
@@ -129,8 +142,11 @@ pipeline {
                             'R': 'rename'
                         ][changeTypeCode] ?: 'modify'
 
+                        echo "🔍 Reviewing ${filePath} (${changeType})"
+
+                        /* === FULL CONTEXT DIFF === */
                         sh """
-                          git diff ${baseCommit}..${headCommit} -- ${filePath} \
+                          git diff ${baseCommit}..${headCommit} --unified=3 -- ${filePath} \
                             | head -c ${MAX_DIFF_SIZE} > diff_current.txt
                         """
 
@@ -139,8 +155,12 @@ pipeline {
                             returnStdout: true
                         ).trim().toInteger()
 
-                        if (diffSize < env.MIN_DIFF_SIZE.toInteger()) continue
+                        if (diffSize < env.MIN_DIFF_SIZE.toInteger()) {
+                            echo "⏭ Skip small diff (${diffSize} bytes)"
+                            continue
+                        }
 
+                        /* === FILE TYPE === */
                         def fileType = "other"
                         if (filePath.contains("/Controllers/")) fileType = "controller"
                         else if (filePath.contains("/Models/")) fileType = "model"
@@ -174,6 +194,7 @@ pipeline {
                             ],
                             changeset: [
                                 file        : filePath,
+                                old_file    : oldPath,
                                 file_type   : fileType,
                                 change_type : changeType,
                                 authors     : authors,
@@ -192,18 +213,22 @@ pipeline {
 
                         writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
-                       
+                        /* === AI REVIEW === */
                         sh '''
-                          echo "🚀 Sending file diff to AI..."
-                          curl -s -X POST "$WEBHOOK_URL" \
-                               -H "Content-Type: application/json" \
-                               -d @payload.json \
-                               > response.json || true
+                          echo "🚀 Sending diff to AI..."
+                          HTTP_CODE=$(curl -s -o response.json -w "%{http_code}" \
+                            -X POST "$WEBHOOK_URL" \
+                            -H "Content-Type: application/json" \
+                            -d @payload.json)
+
+                          if [ "$HTTP_CODE" -ge 400 ]; then
+                            echo "❌ AI Review failed"
+                            cat response.json
+                            exit 1
+                          fi
                         '''
 
-                        /* =========================
-                           AI GENERATE TEST CASE
-                        ========================== */
+                        /* === AI TEST CASE === */
                         sh '''
                           echo "🧪 Generating test cases..."
                           curl -s -X POST "$WEBHOOK_URL?mode=testcase" \
@@ -219,7 +244,7 @@ pipeline {
 
     post {
         success {
-            echo "AI Code Review completed"
+            echo "✅ AI Code Review completed"
         }
         always {
             archiveArtifacts artifacts: '*.txt,*.json,*.env', fingerprint: true
