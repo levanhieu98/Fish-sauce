@@ -174,12 +174,17 @@ pipeline {
                         else if (filePath.contains("/Migrations/")) fileType = "migration"
 
                         def authorsRaw = sh(
-                            script: "git log ${baseCommit}..${headCommit} -- ${filePath} --pretty=%an | sort | uniq",
-                            returnStdout: true
+                                script: """
+                                git log ${baseCommit}..${headCommit} -- ${filePath} \
+                                --pretty=format:%an | sort | uniq
+                                """,
+                                returnStdout: true
                         ).trim()
 
-                        def authors = authorsRaw ? authorsRaw.split('\n') : []
-
+                        def authors = authorsRaw
+                            ? authorsRaw.split('\\n').collect { it.trim() }
+                            : []
+                            
                         def diffHash = sh(
                             script: "sha256sum diff_current.txt | awk '{print \$1}'",
                             returnStdout: true
@@ -190,7 +195,6 @@ pipeline {
                                 review_id : "${env.BUILD_TAG}-${diffHash.take(8)}",
                                 project   : env.PROJECT_NAME,
                                 build_id  : "${env.JOB_NAME}#${env.BUILD_NUMBER}",
-                                build_url : env.BUILD_URL
                             ],
                             changeset: [
                                 file        : filePath,
