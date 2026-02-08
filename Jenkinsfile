@@ -192,18 +192,24 @@ pipeline {
 
                         writeFile file: 'payload.json', text: JsonOutput.toJson(payload)
 
+                       
                         sh '''
-                          echo "POST AI Review"
-                          curl -i -X POST "$WEBHOOK_URL" \
-                            -H "Content-Type: application/json" \
-                            --data-binary @payload.json
+                          echo "🚀 Sending file diff to AI..."
+                          curl -s -X POST "$WEBHOOK_URL" \
+                               -H "Content-Type: application/json" \
+                               -d @payload.json \
+                               > response.json || true
                         '''
 
+                        /* =========================
+                           AI GENERATE TEST CASE
+                        ========================== */
                         sh '''
-                          echo "POST AI Testcase"
-                          curl -i -X POST "$WEBHOOK_URL?mode=testcase" \
-                            -H "Content-Type: application/json" \
-                            --data-binary @payload.json
+                          echo "🧪 Generating test cases..."
+                          curl -s -X POST "$WEBHOOK_URL?mode=testcase" \
+                               -H "Content-Type: application/json" \
+                               -d @payload.json \
+                               > testcase.json || true
                         '''
                     }
                 }
